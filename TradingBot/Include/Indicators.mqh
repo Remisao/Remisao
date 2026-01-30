@@ -267,7 +267,7 @@ bool CIndicators::LoadMACDBuffers(int count)
 //+------------------------------------------------------------------+
 //| Obtenir la valeur RSI                                             |
 //+------------------------------------------------------------------+
-double CIndicators::GetRSI(int shift = 0)
+double CIndicators::GetRSI(int shift)
 {
    if(!LoadRSIBuffer(shift + 1)) return 50.0; // Valeur neutre par défaut
    return m_rsiBuffer[shift];
@@ -277,7 +277,7 @@ double CIndicators::GetRSI(int shift = 0)
 //| RÈGLE: État du RSI                                                |
 //| Surachat > 70, Survente < 30                                      |
 //+------------------------------------------------------------------+
-ENUM_RSI_STATE CIndicators::GetRSIState(int shift = 0)
+ENUM_RSI_STATE CIndicators::GetRSIState(int shift)
 {
    double rsi = GetRSI(shift);
 
@@ -296,7 +296,7 @@ ENUM_RSI_STATE CIndicators::GetRSIState(int shift = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: RSI > 70 = Surachat                                        |
 //+------------------------------------------------------------------+
-bool CIndicators::IsOverbought(int shift = 0)
+bool CIndicators::IsOverbought(int shift)
 {
    return (GetRSI(shift) > m_rsiOverbought);
 }
@@ -304,7 +304,7 @@ bool CIndicators::IsOverbought(int shift = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: RSI < 30 = Survente                                        |
 //+------------------------------------------------------------------+
-bool CIndicators::IsOversold(int shift = 0)
+bool CIndicators::IsOversold(int shift)
 {
    return (GetRSI(shift) < m_rsiOversold);
 }
@@ -312,7 +312,7 @@ bool CIndicators::IsOversold(int shift = 0)
 //+------------------------------------------------------------------+
 //| Analyse complète du RSI                                           |
 //+------------------------------------------------------------------+
-SRSIData CIndicators::AnalyzeRSI(int shift = 0)
+SRSIData CIndicators::AnalyzeRSI(int shift)
 {
    SRSIData data;
 
@@ -327,7 +327,7 @@ SRSIData CIndicators::AnalyzeRSI(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir la ligne MACD                                             |
 //+------------------------------------------------------------------+
-double CIndicators::GetMACDLine(int shift = 0)
+double CIndicators::GetMACDLine(int shift)
 {
    if(!LoadMACDBuffers(shift + 1)) return 0;
    return m_macdBuffer[shift];
@@ -336,7 +336,7 @@ double CIndicators::GetMACDLine(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir la ligne Signal                                           |
 //+------------------------------------------------------------------+
-double CIndicators::GetSignalLine(int shift = 0)
+double CIndicators::GetSignalLine(int shift)
 {
    if(!LoadMACDBuffers(shift + 1)) return 0;
    return m_signalBuffer[shift];
@@ -345,7 +345,7 @@ double CIndicators::GetSignalLine(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir l'histogramme                                             |
 //+------------------------------------------------------------------+
-double CIndicators::GetHistogram(int shift = 0)
+double CIndicators::GetHistogram(int shift)
 {
    if(!LoadMACDBuffers(shift + 1)) return 0;
    return m_histBuffer[shift];
@@ -354,7 +354,7 @@ double CIndicators::GetHistogram(int shift = 0)
 //+------------------------------------------------------------------+
 //| État du MACD                                                      |
 //+------------------------------------------------------------------+
-ENUM_MACD_STATE CIndicators::GetMACDState(int shift = 0)
+ENUM_MACD_STATE CIndicators::GetMACDState(int shift)
 {
    if(!LoadMACDBuffers(shift + 2)) return MACD_NEUTRAL;
 
@@ -387,7 +387,7 @@ ENUM_MACD_STATE CIndicators::GetMACDState(int shift = 0)
 //+------------------------------------------------------------------+
 //| Analyse complète du MACD                                          |
 //+------------------------------------------------------------------+
-SMACDData CIndicators::AnalyzeMACD(int shift = 0)
+SMACDData CIndicators::AnalyzeMACD(int shift)
 {
    SMACDData data;
 
@@ -415,7 +415,7 @@ SMACDData CIndicators::AnalyzeMACD(int shift = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Diminution histogramme + prix monte → Essoufflement       |
 //+------------------------------------------------------------------+
-bool CIndicators::IsExhaustionDetected(int shift = 0)
+bool CIndicators::IsExhaustionDetected(int shift)
 {
    if(!LoadMACDBuffers(shift + 3)) return false;
 
@@ -468,7 +468,7 @@ bool CIndicators::IsMACDBearishCross(int shift = 1)
 //+------------------------------------------------------------------+
 //| Histogramme croissant                                             |
 //+------------------------------------------------------------------+
-bool CIndicators::IsHistogramIncreasing(int shift = 0)
+bool CIndicators::IsHistogramIncreasing(int shift)
 {
    if(!LoadMACDBuffers(shift + 2)) return false;
    return (m_histBuffer[shift] > m_histBuffer[shift + 1]);
@@ -477,7 +477,7 @@ bool CIndicators::IsHistogramIncreasing(int shift = 0)
 //+------------------------------------------------------------------+
 //| Histogramme décroissant                                           |
 //+------------------------------------------------------------------+
-bool CIndicators::IsHistogramDecreasing(int shift = 0)
+bool CIndicators::IsHistogramDecreasing(int shift)
 {
    if(!LoadMACDBuffers(shift + 2)) return false;
    return (m_histBuffer[shift] < m_histBuffer[shift + 1]);
@@ -486,7 +486,7 @@ bool CIndicators::IsHistogramDecreasing(int shift = 0)
 //+------------------------------------------------------------------+
 //| Momentum haussier (RSI + MACD alignés)                            |
 //+------------------------------------------------------------------+
-bool CIndicators::IsBullishMomentum(int shift = 0)
+bool CIndicators::IsBullishMomentum(int shift)
 {
    double rsi = GetRSI(shift);
    SMACDData macd = AnalyzeMACD(shift);
@@ -498,7 +498,7 @@ bool CIndicators::IsBullishMomentum(int shift = 0)
 //+------------------------------------------------------------------+
 //| Momentum baissier (RSI + MACD alignés)                            |
 //+------------------------------------------------------------------+
-bool CIndicators::IsBearishMomentum(int shift = 0)
+bool CIndicators::IsBearishMomentum(int shift)
 {
    double rsi = GetRSI(shift);
    SMACDData macd = AnalyzeMACD(shift);
@@ -543,7 +543,7 @@ string CIndicators::MACDStateToString(ENUM_MACD_STATE state)
 //+------------------------------------------------------------------+
 //| Générer une alerte RSI                                            |
 //+------------------------------------------------------------------+
-string CIndicators::GetRSIAlert(int shift = 0)
+string CIndicators::GetRSIAlert(int shift)
 {
    SRSIData data = AnalyzeRSI(shift);
    string alert = "";
@@ -566,7 +566,7 @@ string CIndicators::GetRSIAlert(int shift = 0)
 //+------------------------------------------------------------------+
 //| Générer une alerte MACD                                           |
 //+------------------------------------------------------------------+
-string CIndicators::GetMACDAlert(int shift = 0)
+string CIndicators::GetMACDAlert(int shift)
 {
    SMACDData data = AnalyzeMACD(shift);
    string alert = "";

@@ -94,7 +94,7 @@ public:
    bool              IsFastDeathCross(int shift = 1);  // EMA 9 croise EMA 21 vers le bas
 
    // RÈGLE: EMA Ribbon aligné → "Tendance forte"
-   bool              IsRibbonAligned(int shift = 0, bool &isBullish);
+   bool              IsRibbonAligned(int shift, bool &isBullish);
 
    // Analyse des croisements
    bool              IsPriceCrossingEMA(int shift, double emaValue, bool &crossUp);
@@ -218,7 +218,7 @@ bool CMovingAverages::LoadBuffers(int count)
 //+------------------------------------------------------------------+
 //| Obtenir EMA 9                                                     |
 //+------------------------------------------------------------------+
-double CMovingAverages::GetEMA9(int shift = 0)
+double CMovingAverages::GetEMA9(int shift)
 {
    if(!LoadBuffers(shift + 1)) return 0;
    return m_ema9Buffer[shift];
@@ -227,7 +227,7 @@ double CMovingAverages::GetEMA9(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir EMA 21                                                    |
 //+------------------------------------------------------------------+
-double CMovingAverages::GetEMA21(int shift = 0)
+double CMovingAverages::GetEMA21(int shift)
 {
    if(!LoadBuffers(shift + 1)) return 0;
    return m_ema21Buffer[shift];
@@ -236,7 +236,7 @@ double CMovingAverages::GetEMA21(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir EMA 50                                                    |
 //+------------------------------------------------------------------+
-double CMovingAverages::GetEMA50(int shift = 0)
+double CMovingAverages::GetEMA50(int shift)
 {
    if(!LoadBuffers(shift + 1)) return 0;
    return m_ema50Buffer[shift];
@@ -245,7 +245,7 @@ double CMovingAverages::GetEMA50(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir EMA 200                                                   |
 //+------------------------------------------------------------------+
-double CMovingAverages::GetEMA200(int shift = 0)
+double CMovingAverages::GetEMA200(int shift)
 {
    if(!LoadBuffers(shift + 1)) return 0;
    return m_ema200Buffer[shift];
@@ -254,7 +254,7 @@ double CMovingAverages::GetEMA200(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir toutes les EMAs                                           |
 //+------------------------------------------------------------------+
-SEMAValues CMovingAverages::GetAllEMAs(int shift = 0)
+SEMAValues CMovingAverages::GetAllEMAs(int shift)
 {
    SEMAValues values;
    LoadBuffers(shift + 1);
@@ -270,7 +270,7 @@ SEMAValues CMovingAverages::GetAllEMAs(int shift = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Prix au-dessus EMA 200 → Bias haussier                    |
 //+------------------------------------------------------------------+
-bool CMovingAverages::IsBullishBias(int shift = 0)
+bool CMovingAverages::IsBullishBias(int shift)
 {
    double price = iClose(m_symbol, m_timeframe, shift);
    double ema200 = GetEMA200(shift);
@@ -281,7 +281,7 @@ bool CMovingAverages::IsBullishBias(int shift = 0)
 //+------------------------------------------------------------------+
 //| Prix en-dessous EMA 200 → Bias baissier                          |
 //+------------------------------------------------------------------+
-bool CMovingAverages::IsBearishBias(int shift = 0)
+bool CMovingAverages::IsBearishBias(int shift)
 {
    double price = iClose(m_symbol, m_timeframe, shift);
    double ema200 = GetEMA200(shift);
@@ -350,7 +350,7 @@ bool CMovingAverages::IsFastDeathCross(int shift = 1)
 //| Ordre haussier: Prix > EMA9 > EMA21 > EMA50 > EMA200             |
 //| Ordre baissier: Prix < EMA9 < EMA21 < EMA50 < EMA200             |
 //+------------------------------------------------------------------+
-bool CMovingAverages::IsRibbonAligned(int shift = 0, bool &isBullish)
+bool CMovingAverages::IsRibbonAligned(int shift, bool &isBullish)
 {
    if(!LoadBuffers(shift + 1)) return false;
 
@@ -434,7 +434,7 @@ bool CMovingAverages::IsEMACrossing(int shift, double fastEMA1, double fastEMA2,
 //+------------------------------------------------------------------+
 //| Analyse complète des EMAs                                         |
 //+------------------------------------------------------------------+
-SEMAAnalysis CMovingAverages::Analyze(int shift = 0)
+SEMAAnalysis CMovingAverages::Analyze(int shift)
 {
    SEMAAnalysis analysis;
 
@@ -457,7 +457,7 @@ SEMAAnalysis CMovingAverages::Analyze(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir le support dynamique (EMA la plus proche en dessous)      |
 //+------------------------------------------------------------------+
-double CMovingAverages::GetDynamicSupport(int shift = 0)
+double CMovingAverages::GetDynamicSupport(int shift)
 {
    double price = iClose(m_symbol, m_timeframe, shift);
    SEMAValues emas = GetAllEMAs(shift);
@@ -476,7 +476,7 @@ double CMovingAverages::GetDynamicSupport(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir la résistance dynamique (EMA la plus proche au-dessus)    |
 //+------------------------------------------------------------------+
-double CMovingAverages::GetDynamicResistance(int shift = 0)
+double CMovingAverages::GetDynamicResistance(int shift)
 {
    double price = iClose(m_symbol, m_timeframe, shift);
    SEMAValues emas = GetAllEMAs(shift);
@@ -534,7 +534,7 @@ bool CMovingAverages::IsEMATrendingDown(int period, int lookback = 5)
 //+------------------------------------------------------------------+
 //| Obtenir le signal actuel                                          |
 //+------------------------------------------------------------------+
-ENUM_EMA_SIGNAL CMovingAverages::GetCurrentSignal(int shift = 0)
+ENUM_EMA_SIGNAL CMovingAverages::GetCurrentSignal(int shift)
 {
    // Vérifier les croix majeures d'abord
    if(IsGoldenCross(shift))
@@ -563,7 +563,7 @@ ENUM_EMA_SIGNAL CMovingAverages::GetCurrentSignal(int shift = 0)
 //+------------------------------------------------------------------+
 //| Obtenir le bias en string                                         |
 //+------------------------------------------------------------------+
-string CMovingAverages::GetBiasString(int shift = 0)
+string CMovingAverages::GetBiasString(int shift)
 {
    if(IsBullishBias(shift))
       return "HAUSSIER (Prix > EMA 200)";
@@ -574,7 +574,7 @@ string CMovingAverages::GetBiasString(int shift = 0)
 //+------------------------------------------------------------------+
 //| Générer une alerte EMA                                            |
 //+------------------------------------------------------------------+
-string CMovingAverages::GetEMAAlert(int shift = 0)
+string CMovingAverages::GetEMAAlert(int shift)
 {
    string alert = "";
 

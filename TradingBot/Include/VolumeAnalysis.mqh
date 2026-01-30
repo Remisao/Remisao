@@ -129,7 +129,7 @@ void CVolumeAnalysis::SetParameters(int maPeriod = 20, double breakoutPct = 150.
 //+------------------------------------------------------------------+
 //| RÈGLE: Calcul de la moyenne du volume SMA(20)                    |
 //+------------------------------------------------------------------+
-double CVolumeAnalysis::GetVolumeMA(int shift = 0)
+double CVolumeAnalysis::GetVolumeMA(int shift)
 {
    double sum = 0;
 
@@ -144,7 +144,7 @@ double CVolumeAnalysis::GetVolumeMA(int shift = 0)
 //+------------------------------------------------------------------+
 //| Calcul du ratio volume actuel / moyenne                          |
 //+------------------------------------------------------------------+
-double CVolumeAnalysis::GetVolumeRatio(int shift = 0)
+double CVolumeAnalysis::GetVolumeRatio(int shift)
 {
    double avgVolume = GetVolumeMA(shift + 1); // Moyenne des barres précédentes
    if(avgVolume == 0) return 0;
@@ -156,7 +156,7 @@ double CVolumeAnalysis::GetVolumeRatio(int shift = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Cassure valide UNIQUEMENT si Volume ≥ 150% de la moyenne  |
 //+------------------------------------------------------------------+
-bool CVolumeAnalysis::IsValidBreakoutVolume(int shift = 0)
+bool CVolumeAnalysis::IsValidBreakoutVolume(int shift)
 {
    double ratio = GetVolumeRatio(shift);
    return (ratio >= m_breakoutThreshold);
@@ -165,7 +165,7 @@ bool CVolumeAnalysis::IsValidBreakoutVolume(int shift = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Cassure idéale si Volume ≥ 200%                           |
 //+------------------------------------------------------------------+
-bool CVolumeAnalysis::IsIdealBreakoutVolume(int shift = 0)
+bool CVolumeAnalysis::IsIdealBreakoutVolume(int shift)
 {
    double ratio = GetVolumeRatio(shift);
    return (ratio >= m_idealThreshold);
@@ -218,7 +218,7 @@ bool CVolumeAnalysis::IsAccumulation(int lookback = 10)
 //+------------------------------------------------------------------+
 //| Déterminer l'état du volume                                       |
 //+------------------------------------------------------------------+
-ENUM_VOLUME_STATE CVolumeAnalysis::GetVolumeState(int shift = 0)
+ENUM_VOLUME_STATE CVolumeAnalysis::GetVolumeState(int shift)
 {
    // Vérifier d'abord l'accumulation
    if(IsAccumulation(10))
@@ -239,7 +239,7 @@ ENUM_VOLUME_STATE CVolumeAnalysis::GetVolumeState(int shift = 0)
 //+------------------------------------------------------------------+
 //| Analyse complète du volume                                        |
 //+------------------------------------------------------------------+
-SVolumeData CVolumeAnalysis::Analyze(int shift = 0)
+SVolumeData CVolumeAnalysis::Analyze(int shift)
 {
    SVolumeData data;
 
@@ -256,7 +256,7 @@ SVolumeData CVolumeAnalysis::Analyze(int shift = 0)
 //+------------------------------------------------------------------+
 //| Confirmer une cassure par le volume                               |
 //+------------------------------------------------------------------+
-bool CVolumeAnalysis::ConfirmBreakout(int shift = 0)
+bool CVolumeAnalysis::ConfirmBreakout(int shift)
 {
    return IsValidBreakoutVolume(shift);
 }
@@ -264,7 +264,7 @@ bool CVolumeAnalysis::ConfirmBreakout(int shift = 0)
 //+------------------------------------------------------------------+
 //| Détecter un pic de volume                                         |
 //+------------------------------------------------------------------+
-bool CVolumeAnalysis::HasVolumeSpike(int shift = 0)
+bool CVolumeAnalysis::HasVolumeSpike(int shift)
 {
    double ratio = GetVolumeRatio(shift);
    return (ratio >= 250.0); // 250% de la moyenne
@@ -331,7 +331,7 @@ string CVolumeAnalysis::VolumeStateToString(ENUM_VOLUME_STATE state)
 //+------------------------------------------------------------------+
 //| Générer une alerte volume                                         |
 //+------------------------------------------------------------------+
-string CVolumeAnalysis::GetVolumeAlert(int shift = 0)
+string CVolumeAnalysis::GetVolumeAlert(int shift)
 {
    SVolumeData data = Analyze(shift);
 

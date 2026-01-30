@@ -190,7 +190,7 @@ double CTradeManagement::NormalizePrice(double price)
 //+------------------------------------------------------------------+
 //| RÈGLE: SL technique sous swing low / au-dessus swing high        |
 //+------------------------------------------------------------------+
-double CTradeManagement::CalculateStopLoss(bool isBuy, double swingLow, double swingHigh, double buffer = 0)
+double CTradeManagement::CalculateStopLoss(bool isBuy, double swingLow, double swingHigh, double buffer)
 {
    double pip = GetPipValue();
    double sl;

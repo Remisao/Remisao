@@ -101,8 +101,8 @@ public:
 
    // ============ RÈGLE CHAPITRE 13: BOS / CHoCH ============
    ENUM_STRUCTURE_BREAK DetectStructureBreak(int shift = 1);
-   bool              IsBOS(int shift = 1, bool &isBullish);
-   bool              IsCHoCH(int shift = 1, bool &isBullish);
+   bool              IsBOS(int shift, bool &isBullish);
+   bool              IsCHoCH(int shift, bool &isBullish);
 
    // ============ RÈGLE: ORDER BLOCKS ============
    void              DetectOrderBlocks();
@@ -270,7 +270,7 @@ ENUM_STRUCTURE_BREAK CSmartMoney::DetectStructureBreak(int shift = 1)
 //+------------------------------------------------------------------+
 //| Détecter un BOS                                                   |
 //+------------------------------------------------------------------+
-bool CSmartMoney::IsBOS(int shift = 1, bool &isBullish)
+bool CSmartMoney::IsBOS(int shift, bool &isBullish)
 {
    ENUM_STRUCTURE_BREAK sb = DetectStructureBreak(shift);
 
@@ -291,7 +291,7 @@ bool CSmartMoney::IsBOS(int shift = 1, bool &isBullish)
 //+------------------------------------------------------------------+
 //| Détecter un CHoCH                                                 |
 //+------------------------------------------------------------------+
-bool CSmartMoney::IsCHoCH(int shift = 1, bool &isBullish)
+bool CSmartMoney::IsCHoCH(int shift, bool &isBullish)
 {
    ENUM_STRUCTURE_BREAK sb = DetectStructureBreak(shift);
 

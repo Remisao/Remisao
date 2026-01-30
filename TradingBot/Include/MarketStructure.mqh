@@ -279,7 +279,7 @@ ENUM_MARKET_STRUCTURE CMarketStructure::GetStructure()
 //+------------------------------------------------------------------+
 //| RÈGLE: Higher High - nouveau plus haut plus haut que le précédent|
 //+------------------------------------------------------------------+
-bool CMarketStructure::IsHigherHigh(int index = 0)
+bool CMarketStructure::IsHigherHigh(int index)
 {
    if(ArraySize(m_swingHighs) < 2) return false;
    if(index + 1 >= ArraySize(m_swingHighs)) return false;
@@ -290,7 +290,7 @@ bool CMarketStructure::IsHigherHigh(int index = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Higher Low - nouveau plus bas plus haut que le précédent  |
 //+------------------------------------------------------------------+
-bool CMarketStructure::IsHigherLow(int index = 0)
+bool CMarketStructure::IsHigherLow(int index)
 {
    if(ArraySize(m_swingLows) < 2) return false;
    if(index + 1 >= ArraySize(m_swingLows)) return false;
@@ -301,7 +301,7 @@ bool CMarketStructure::IsHigherLow(int index = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Lower High - nouveau plus haut plus bas que le précédent  |
 //+------------------------------------------------------------------+
-bool CMarketStructure::IsLowerHigh(int index = 0)
+bool CMarketStructure::IsLowerHigh(int index)
 {
    if(ArraySize(m_swingHighs) < 2) return false;
    if(index + 1 >= ArraySize(m_swingHighs)) return false;
@@ -312,7 +312,7 @@ bool CMarketStructure::IsLowerHigh(int index = 0)
 //+------------------------------------------------------------------+
 //| RÈGLE: Lower Low - nouveau plus bas plus bas que le précédent    |
 //+------------------------------------------------------------------+
-bool CMarketStructure::IsLowerLow(int index = 0)
+bool CMarketStructure::IsLowerLow(int index)
 {
    if(ArraySize(m_swingLows) < 2) return false;
    if(index + 1 >= ArraySize(m_swingLows)) return false;
