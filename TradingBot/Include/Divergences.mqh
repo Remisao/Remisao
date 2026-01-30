@@ -457,13 +457,13 @@ bool CDivergences::HasStructureBreakConfirmation(SDivergence &div)
    // Pour une divergence haussière, on attend un BOS haussier
    if(div.type == DIV_BULLISH_REGULAR || div.type == DIV_BULLISH_HIDDEN)
    {
-      return m_marketStructure->IsBullishBOS(1);
+      return (*m_marketStructure).IsBullishBOS(1);
    }
 
    // Pour une divergence baissière, on attend un BOS baissier
    if(div.type == DIV_BEARISH_REGULAR || div.type == DIV_BEARISH_HIDDEN)
    {
-      return m_marketStructure->IsBearishBOS(1);
+      return (*m_marketStructure).IsBearishBOS(1);
    }
 
    return false;
@@ -479,13 +479,13 @@ bool CDivergences::HasCandlePatternConfirmation(SDivergence &div)
    // Pour une divergence haussière, on attend une confirmation haussière
    if(div.type == DIV_BULLISH_REGULAR || div.type == DIV_BULLISH_HIDDEN)
    {
-      return m_candleAnalysis->HasBullishConfirmation(1);
+      return (*m_candleAnalysis).HasBullishConfirmation(1);
    }
 
    // Pour une divergence baissière, on attend une confirmation baissière
    if(div.type == DIV_BEARISH_REGULAR || div.type == DIV_BEARISH_HIDDEN)
    {
-      return m_candleAnalysis->HasBearishConfirmation(1);
+      return (*m_candleAnalysis).HasBearishConfirmation(1);
    }
 
    return false;

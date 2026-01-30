@@ -775,6 +775,11 @@ int CSmartMoney::GetLiquidityCount()
 SLiquidity CSmartMoney::GetLiquidity(int index)
 {
    SLiquidity empty;
+   empty.level = 0;
+   empty.isHighLiquidity = false;
+   empty.touchCount = 0;
+   empty.lastTouch = 0;
+   empty.isSwept = false;
    if(index < 0 || index >= ArraySize(m_liquidityLevels)) return empty;
    return m_liquidityLevels[index];
 }
@@ -874,7 +879,6 @@ string CSmartMoney::GetSMCAlert()
    string alert = "";
 
    // Vérifier BOS / CHoCH
-   bool isBullish;
    ENUM_STRUCTURE_BREAK sb = DetectStructureBreak(1);
 
    if(sb == SB_BOS_BULLISH || sb == SB_CHOCH_BULLISH)

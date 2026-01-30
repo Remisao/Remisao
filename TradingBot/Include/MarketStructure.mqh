@@ -538,6 +538,10 @@ int CMarketStructure::GetSwingLowCount()
 SSwingPoint CMarketStructure::GetSwingHigh(int index)
 {
    SSwingPoint empty;
+   empty.price = 0;
+   empty.time = 0;
+   empty.barIndex = 0;
+   empty.isHigh = false;
    if(index < 0 || index >= ArraySize(m_swingHighs))
       return empty;
    return m_swingHighs[index];
@@ -546,6 +550,10 @@ SSwingPoint CMarketStructure::GetSwingHigh(int index)
 SSwingPoint CMarketStructure::GetSwingLow(int index)
 {
    SSwingPoint empty;
+   empty.price = 0;
+   empty.time = 0;
+   empty.barIndex = 0;
+   empty.isHigh = false;
    if(index < 0 || index >= ArraySize(m_swingLows))
       return empty;
    return m_swingLows[index];

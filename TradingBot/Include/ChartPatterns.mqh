@@ -804,6 +804,18 @@ int CChartPatterns::GetPatternCount()
 SChartPattern CChartPatterns::GetPattern(int index)
 {
    SChartPattern empty;
+   empty.type = PATTERN_NONE;
+   empty.status = STATUS_FORMING;
+   empty.necklinePrice = 0;
+   empty.targetPrice = 0;
+   empty.peak1 = 0;
+   empty.peak2 = 0;
+   empty.trough1 = 0;
+   empty.trough2 = 0;
+   empty.startTime = 0;
+   empty.endTime = 0;
+   empty.isBullish = false;
+   empty.reliability = 0;
    if(index < 0 || index >= ArraySize(m_detectedPatterns))
       return empty;
    return m_detectedPatterns[index];
@@ -814,6 +826,18 @@ SChartPattern CChartPatterns::GetLastPattern()
    if(ArraySize(m_detectedPatterns) == 0)
    {
       SChartPattern empty;
+      empty.type = PATTERN_NONE;
+      empty.status = STATUS_FORMING;
+      empty.necklinePrice = 0;
+      empty.targetPrice = 0;
+      empty.peak1 = 0;
+      empty.peak2 = 0;
+      empty.trough1 = 0;
+      empty.trough2 = 0;
+      empty.startTime = 0;
+      empty.endTime = 0;
+      empty.isBullish = false;
+      empty.reliability = 0;
       return empty;
    }
    return m_detectedPatterns[ArraySize(m_detectedPatterns) - 1];

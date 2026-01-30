@@ -448,6 +448,15 @@ int CSupportResistance::GetLevelCount()
 SLevel CSupportResistance::GetLevel(int index)
 {
    SLevel emptyLevel;
+   emptyLevel.price = 0;
+   emptyLevel.type = LEVEL_SUPPORT;
+   emptyLevel.strength = STRENGTH_WEAK;
+   emptyLevel.touchCount = 0;
+   emptyLevel.firstTouch = 0;
+   emptyLevel.lastTouch = 0;
+   emptyLevel.isBroken = false;
+   emptyLevel.isFakeout = false;
+   emptyLevel.brokenPrice = 0;
    if(index < 0 || index >= ArraySize(m_levels))
       return emptyLevel;
 
