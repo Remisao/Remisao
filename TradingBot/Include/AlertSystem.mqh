@@ -1,129 +1,468 @@
 //+------------------------------------------------------------------+
-//|                                               AlertSystem.mqh   |
-//|                        SYSTÈME D'ALERTES CENTRALISÉ             |
-//|                     Bot Multi-Marchés Forex & Crypto            |
+//|                                               AlertSystem.mqh    |
+//|                  SYSTÈME D'ALERTES PROFESSIONNEL - MACHINE À ÉTATS|
+//|                     Bot Analyste Multi-Marchés Forex & Crypto     |
 //+------------------------------------------------------------------+
-#property copyright "Trading Bot"
+#property copyright "Trading Bot - Professional Alert System"
 #property link      ""
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 //+------------------------------------------------------------------+
-//| Énumération des types d'alertes                                  |
+//| PHILOSOPHIE DU SYSTÈME:                                           |
+//|                                                                   |
+//| Le bot ne cherche PAS des trades                                  |
+//| Il attend des opportunités de CLASSE A                            |
+//|                                                                   |
+//| ⚠️ PAS DE TRADE - Uniquement analyse et alertes                   |
+//| ⚠️ PAS DE SPAM - Alertes disciplinées et hiérarchisées           |
+//|                                                                   |
+//| Machine à états: NEUTRAL → PRE_SIGNAL → SETUP_ACTIVE → EXIT      |
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| ÉNUMÉRATIONS                                                      |
+//+------------------------------------------------------------------+
+
+//--- États de la machine (4 états exclusifs)
+enum ENUM_BOT_STATE
+{
+   STATE_NEUTRAL,           // Pas d'opportunité en cours
+   STATE_PRE_SIGNAL,        // Contexte en cours (3/5 conditions)
+   STATE_SETUP_ACTIVE,      // Setup Classe A confirmé
+   STATE_EXIT_PRIORITY      // Sortie recommandée (priorité max)
+};
+
+//--- Types d'alertes
 enum ENUM_ALERT_TYPE
 {
-   ALERT_SETUP_BUY = 0,
-   ALERT_SETUP_SELL,
-   ALERT_PATTERN,
-   ALERT_DIVERGENCE,
-   ALERT_SMC,
-   ALERT_MTF,
-   ALERT_VOLUME,
-   ALERT_RISK,
-   ALERT_STRUCTURE,
-   ALERT_INFO
+   ALERT_NONE = 0,
+   ALERT_PRE_SIGNAL,        // 🟡 Contexte en cours
+   ALERT_SETUP_SIGNAL,      // 🚨 Setup confirmé
+   ALERT_MJ_SETUP,          // 🔁 Mise à jour setup
+   ALERT_EXIT,              // 🟢 Sortie recommandée
+   ALERT_INFO               // ℹ️ Information
 };
 
+//--- Priorités
 enum ENUM_ALERT_PRIORITY
 {
-   PRIORITY_LOW = 0,
-   PRIORITY_MEDIUM,
-   PRIORITY_HIGH,
-   PRIORITY_CRITICAL
+   PRIORITY_INFO = 0,       // Information simple
+   PRIORITY_LOW,            // Basse
+   PRIORITY_MEDIUM,         // Moyenne
+   PRIORITY_HIGH,           // Haute
+   PRIORITY_CRITICAL        // Critique (sortie)
 };
 
-//+------------------------------------------------------------------+
-//| Structure d'une alerte                                           |
-//+------------------------------------------------------------------+
-struct SAlert
+//--- Direction du setup
+enum ENUM_SETUP_DIRECTION
 {
-   ENUM_ALERT_TYPE      type;
-   ENUM_ALERT_PRIORITY  priority;
-   string               symbol;
-   ENUM_TIMEFRAMES      timeframe;
-   string               message;
-   string               details;
-   datetime             time;
-   int                  conditionsValidated;   // Sur 5
-   bool                 isSent;
+   DIRECTION_NONE = 0,
+   DIRECTION_BUY,           // Achat
+   DIRECTION_SELL           // Vente
+};
+
+//--- Raisons de sortie
+enum ENUM_EXIT_REASON
+{
+   EXIT_NONE = 0,
+   EXIT_CHOCH_AGAINST,      // CHoCH contre position
+   EXIT_BOS_INVERSE,        // BOS inverse HTF
+   EXIT_DIVERGENCE,         // Divergence contraire confirmée
+   EXIT_STRONG_CANDLE,      // Bougie opposée forte (>70%)
+   EXIT_VOLUME_REVERSAL,    // Volume de retournement
+   EXIT_EMA_BREAK,          // Cassure EMA 50/200
+   EXIT_MTF_MISALIGNMENT,   // Désalignement MTF
+   EXIT_ZONE_INVALIDATED    // Zone invalidée
+};
+
+//--- Raisons de PRE_SIGNAL
+enum ENUM_PRESIGNAL_REASON
+{
+   PRESIGNAL_COMPRESSION,   // Compression détectée
+   PRESIGNAL_ACCUMULATION,  // Accumulation/Distribution
+   PRESIGNAL_ZONE_APPROACH, // Approche zone majeure
+   PRESIGNAL_DIVERGENCE,    // Divergence non confirmée
+   PRESIGNAL_EMA_CONFLUENCE // Confluence EMA
 };
 
 //+------------------------------------------------------------------+
-//| Classe système d'alertes                                          |
+//| STRUCTURES DE DONNÉES                                             |
+//+------------------------------------------------------------------+
+
+//--- Setup actif (stocke les infos d'un setup en cours)
+struct SActiveSetup
+{
+   // Identification
+   int                     id;              // ID unique
+   string                  symbol;          // Symbole
+   ENUM_TIMEFRAMES         timeframe;       // TF du setup
+   ENUM_SETUP_DIRECTION    direction;       // BUY ou SELL
+
+   // Prix
+   double                  entryPrice;      // Prix d'entrée
+   double                  stopLoss;        // Stop Loss
+   double                  tp1;             // Take Profit 1
+   double                  tp2;             // Take Profit 2
+
+   // Contexte
+   double                  riskPercent;     // Risque en %
+   int                     conditionsValidated; // Conditions validées (sur 5)
+   string                  reason;          // Raison du setup
+
+   // Suivi
+   datetime                createdAt;       // Date création
+   datetime                lastUpdate;      // Dernière mise à jour
+   int                     updateCount;     // Nombre de MJ
+   bool                    isValid;         // Toujours valide
+
+   void Reset()
+   {
+      id = 0;
+      symbol = "";
+      timeframe = PERIOD_CURRENT;
+      direction = DIRECTION_NONE;
+      entryPrice = 0;
+      stopLoss = 0;
+      tp1 = 0;
+      tp2 = 0;
+      riskPercent = 0;
+      conditionsValidated = 0;
+      reason = "";
+      createdAt = 0;
+      lastUpdate = 0;
+      updateCount = 0;
+      isValid = false;
+   }
+};
+
+//--- État d'un marché
+struct SMarketState
+{
+   string                  symbol;
+   ENUM_BOT_STATE          state;
+   SActiveSetup            activeSetup;
+   datetime                lastAlertTime;
+   datetime                lastStateChange;
+   ENUM_ALERT_TYPE         lastAlertType;
+   int                     preSignalCount;  // Conditions PRE_SIGNAL validées
+   bool                    preSignalReasons[5]; // Compression, Accumulation, Zone, Divergence, EMA
+
+   void Reset()
+   {
+      symbol = "";
+      state = STATE_NEUTRAL;
+      activeSetup.Reset();
+      lastAlertTime = 0;
+      lastStateChange = 0;
+      lastAlertType = ALERT_NONE;
+      preSignalCount = 0;
+      for(int i = 0; i < 5; i++) preSignalReasons[i] = false;
+   }
+};
+
+//--- Alerte complète
+struct SAlertData
+{
+   ENUM_ALERT_TYPE         type;
+   ENUM_ALERT_PRIORITY     priority;
+   string                  symbol;
+   ENUM_TIMEFRAMES         timeframe;
+   ENUM_SETUP_DIRECTION    direction;
+   string                  title;
+   string                  body;
+   double                  entryPrice;
+   double                  stopLoss;
+   double                  tp1;
+   double                  tp2;
+   double                  riskPercent;
+   ENUM_EXIT_REASON        exitReason;
+   datetime                time;
+   bool                    isSent;
+
+   void Reset()
+   {
+      type = ALERT_NONE;
+      priority = PRIORITY_INFO;
+      symbol = "";
+      timeframe = PERIOD_CURRENT;
+      direction = DIRECTION_NONE;
+      title = "";
+      body = "";
+      entryPrice = 0;
+      stopLoss = 0;
+      tp1 = 0;
+      tp2 = 0;
+      riskPercent = 0;
+      exitReason = EXIT_NONE;
+      time = 0;
+      isSent = false;
+   }
+};
+
+//--- Conditions PRE_SIGNAL
+struct SPreSignalConditions
+{
+   bool hasCompression;       // Range qui se resserre
+   bool hasAccumulation;      // Accumulation/Distribution
+   bool nearMajorZone;        // Proche zone majeure (SR/OB/FVG/Fibo)
+   bool hasDivergence;        // Divergence NON confirmée
+   bool hasEMAConfluence;     // Prix proche EMA 50/200
+   int  validCount;           // Nombre validé (sur 5)
+
+   void Reset()
+   {
+      hasCompression = false;
+      hasAccumulation = false;
+      nearMajorZone = false;
+      hasDivergence = false;
+      hasEMAConfluence = false;
+      validCount = 0;
+   }
+
+   void Calculate()
+   {
+      validCount = 0;
+      if(hasCompression) validCount++;
+      if(hasAccumulation) validCount++;
+      if(nearMajorZone) validCount++;
+      if(hasDivergence) validCount++;
+      if(hasEMAConfluence) validCount++;
+   }
+};
+
+//--- Conditions SETUP_SIGNAL (Checklist)
+struct SSetupConditions
+{
+   bool contextOK;            // Contexte MTF aligné
+   bool confluenceOK;         // Zone de confluence
+   bool candleSignalOK;       // Signal bougie (rejet/impulsion)
+   bool volumeOK;             // Volume >= 150%
+   bool structureOK;          // Structure SMC
+   int  validCount;           // Nombre validé (sur 5)
+
+   void Reset()
+   {
+      contextOK = false;
+      confluenceOK = false;
+      candleSignalOK = false;
+      volumeOK = false;
+      structureOK = false;
+      validCount = 0;
+   }
+
+   void Calculate()
+   {
+      validCount = 0;
+      if(contextOK) validCount++;
+      if(confluenceOK) validCount++;
+      if(candleSignalOK) validCount++;
+      if(volumeOK) validCount++;
+      if(structureOK) validCount++;
+   }
+};
+
+//--- Conditions EXIT
+struct SExitConditions
+{
+   bool hasChochAgainst;      // CHoCH contre position
+   bool hasBosInverse;        // BOS inverse HTF
+   bool hasDivergenceConfirmed; // Divergence contraire confirmée
+   bool hasStrongOppositeCandle; // Bougie opposée > 70%
+   bool hasVolumeReversal;    // Volume de retournement
+   bool hasEMABreak;          // Cassure EMA 50/200
+   bool hasMTFMisalignment;   // Désalignement MTF
+   ENUM_EXIT_REASON mainReason;
+
+   void Reset()
+   {
+      hasChochAgainst = false;
+      hasBosInverse = false;
+      hasDivergenceConfirmed = false;
+      hasStrongOppositeCandle = false;
+      hasVolumeReversal = false;
+      hasEMABreak = false;
+      hasMTFMisalignment = false;
+      mainReason = EXIT_NONE;
+   }
+
+   bool HasAnyExitSignal()
+   {
+      return (hasChochAgainst || hasBosInverse || hasDivergenceConfirmed ||
+              hasStrongOppositeCandle || hasVolumeReversal || hasEMABreak ||
+              hasMTFMisalignment);
+   }
+
+   void DetermineMainReason()
+   {
+      // Priorité: CHoCH > BOS > Divergence > Candle > Volume > EMA > MTF
+      if(hasChochAgainst) mainReason = EXIT_CHOCH_AGAINST;
+      else if(hasBosInverse) mainReason = EXIT_BOS_INVERSE;
+      else if(hasDivergenceConfirmed) mainReason = EXIT_DIVERGENCE;
+      else if(hasStrongOppositeCandle) mainReason = EXIT_STRONG_CANDLE;
+      else if(hasVolumeReversal) mainReason = EXIT_VOLUME_REVERSAL;
+      else if(hasEMABreak) mainReason = EXIT_EMA_BREAK;
+      else if(hasMTFMisalignment) mainReason = EXIT_MTF_MISALIGNMENT;
+      else mainReason = EXIT_NONE;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| CLASSE PRINCIPALE - Système d'Alertes avec Machine à États        |
 //+------------------------------------------------------------------+
 class CAlertSystem
 {
 private:
-   bool              m_enablePush;        // Notifications push
-   bool              m_enableEmail;       // Notifications email
-   bool              m_enableSound;       // Alertes sonores
-   bool              m_enablePopup;       // Popups MT5
-   bool              m_enableTelegram;    // Notifications Telegram
+   //--- Configuration
+   bool                    m_enablePush;
+   bool                    m_enableEmail;
+   bool                    m_enableSound;
+   bool                    m_enablePopup;
+   bool                    m_enableTelegram;
+   string                  m_telegramBotToken;
+   string                  m_telegramChatId;
 
-   string            m_telegramBotToken;
-   string            m_telegramChatId;
+   //--- Anti-spam
+   int                     m_minAlertIntervalSec;    // Intervalle min entre alertes (même type)
+   int                     m_preSignalCooldownSec;   // Cooldown PRE_SIGNAL
+   int                     m_setupAlertCooldownSec;  // Cooldown SETUP
 
-   SAlert            m_alertHistory[];
-   int               m_maxHistory;
-   datetime          m_lastAlertTime;
-   int               m_minAlertIntervalSec; // Intervalle minimum entre alertes
+   //--- États des marchés
+   SMarketState            m_marketStates[];
+   int                     m_marketCount;
 
-   // Méthodes privées
-   void              AddToHistory(SAlert &alert);
-   bool              CanSendAlert();
-   string            GetAlertPrefix(ENUM_ALERT_TYPE type);
-   string            GetPriorityString(ENUM_ALERT_PRIORITY priority);
+   //--- Historique
+   SAlertData              m_alertHistory[];
+   int                     m_maxHistory;
+
+   //--- ID Generator
+   int                     m_nextSetupId;
+
+   //--- Méthodes privées - État
+   int                     FindMarketIndex(string symbol);
+   int                     AddMarket(string symbol);
+   bool                    CanSendAlert(int marketIndex, ENUM_ALERT_TYPE type);
+   void                    UpdateLastAlertTime(int marketIndex, ENUM_ALERT_TYPE type);
+
+   //--- Méthodes privées - Formatage
+   string                  FormatPreSignalAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                                ENUM_SETUP_DIRECTION dir, SPreSignalConditions &cond);
+   string                  FormatSetupSignalAlert(SActiveSetup &setup, SSetupConditions &cond);
+   string                  FormatMJSetupAlert(SActiveSetup &setup, string changes);
+   string                  FormatExitAlert(SActiveSetup &setup, ENUM_EXIT_REASON reason);
+
+   //--- Méthodes privées - Envoi
+   void                    DoSendAlert(SAlertData &alert);
+   void                    SendPushNotification(string title, string message);
+   void                    SendEmailNotification(string subject, string body);
+   void                    SendTelegramNotification(string message);
+   void                    PlayAlertSound(ENUM_ALERT_PRIORITY priority);
+   void                    ShowPopup(string message);
+
+   //--- Méthodes privées - Historique
+   void                    AddToHistory(SAlertData &alert);
+
+   //--- Méthodes privées - Utilitaires
+   string                  TimeframeToString(ENUM_TIMEFRAMES tf);
+   string                  DirectionToString(ENUM_SETUP_DIRECTION dir);
+   string                  StateToString(ENUM_BOT_STATE state);
+   string                  ExitReasonToString(ENUM_EXIT_REASON reason);
+   string                  DoubleToStr(double value, int digits);
 
 public:
-   CAlertSystem();
-   ~CAlertSystem();
+   //--- Constructeur/Destructeur
+                           CAlertSystem();
+                          ~CAlertSystem();
 
-   // Configuration
-   void              EnablePush(bool enable);
-   void              EnableEmail(bool enable);
-   void              EnableSound(bool enable);
-   void              EnablePopup(bool enable);
-   void              EnableTelegram(bool enable, string botToken, string chatId);
-   void              SetMinInterval(int seconds);
+   //--- Initialisation
+   bool                    Init();
+   void                    Deinit();
 
-   // ============ CHECKLIST FINALE ============
-   // Une alerte n'est envoyée QUE SI minimum 4 conditions sur 5 validées
-   bool              ValidateChecklist(bool contextOK, bool confluenceOK,
-                                       bool candleSignalOK, bool volumeOK,
-                                       bool structureOK, int &validatedCount);
+   //--- Configuration
+   void                    EnablePush(bool enable)      { m_enablePush = enable; }
+   void                    EnableEmail(bool enable)     { m_enableEmail = enable; }
+   void                    EnableSound(bool enable)     { m_enableSound = enable; }
+   void                    EnablePopup(bool enable)     { m_enablePopup = enable; }
+   void                    EnableTelegram(bool enable, string token, string chatId);
+   void                    SetMinInterval(int seconds)  { m_minAlertIntervalSec = seconds; }
+   void                    SetPreSignalCooldown(int seconds) { m_preSignalCooldownSec = seconds; }
+   void                    SetSetupCooldown(int seconds) { m_setupAlertCooldownSec = seconds; }
 
-   // Envoi d'alertes
-   void              SendAlert(SAlert &alert);
-   void              SendSetupAlert(string symbol, ENUM_TIMEFRAMES tf, bool isBuy,
-                                   string message, string details, int conditions);
-   void              SendPatternAlert(string symbol, ENUM_TIMEFRAMES tf,
-                                      string patternName, string details);
-   void              SendSMCAlert(string symbol, ENUM_TIMEFRAMES tf, string smcType, string details);
-   void              SendDivergenceAlert(string symbol, ENUM_TIMEFRAMES tf, string divType, string details);
-   void              SendMTFAlert(string symbol, string alignment, string details);
-   void              SendVolumeAlert(string symbol, ENUM_TIMEFRAMES tf, string volumeState, string details);
-   void              SendRiskAlert(string symbol, string message);
+   //--- ============ MACHINE À ÉTATS ============
 
-   // Envoi spécifique
-   void              SendPushNotification(string title, string message);
-   void              SendEmailNotification(string subject, string body);
-   void              SendTelegramNotification(string message);
-   void              PlayAlertSound(ENUM_ALERT_PRIORITY priority);
-   void              ShowPopup(string title, string message);
+   //--- Obtenir l'état actuel d'un marché
+   ENUM_BOT_STATE          GetMarketState(string symbol);
 
-   // Construction du message d'alerte complet
-   string            BuildFullAlertMessage(SAlert &alert);
-   string            BuildSetupMessage(string symbol, bool isBuy, string details, int conditions);
+   //--- Transition vers PRE_SIGNAL
+   //--- CONDITIONS: 3 sur 5 minimum
+   bool                    TransitionToPreSignal(string symbol, ENUM_TIMEFRAMES tf,
+                                                 ENUM_SETUP_DIRECTION dir,
+                                                 SPreSignalConditions &conditions);
 
-   // Historique
-   int               GetHistoryCount();
-   SAlert            GetHistoryAlert(int index);
-   void              ClearHistory();
+   //--- Transition vers SETUP_ACTIVE
+   //--- CONDITIONS: 4 sur 5 minimum + Volume >= 150% + Bougie clôturée
+   bool                    TransitionToSetupActive(string symbol, ENUM_TIMEFRAMES tf,
+                                                   ENUM_SETUP_DIRECTION dir,
+                                                   SSetupConditions &conditions,
+                                                   double entry, double sl, double tp1, double tp2,
+                                                   double riskPct);
 
-   // Utilitaires
-   string            TimeframeToString(ENUM_TIMEFRAMES tf);
-   string            AlertTypeToString(ENUM_ALERT_TYPE type);
+   //--- Mise à jour d'un setup existant (MJ_SETUP)
+   //--- CONDITIONS: Setup existant + au moins 1 élément changé
+   bool                    UpdateActiveSetup(string symbol,
+                                             double newEntry = 0, double newSL = 0,
+                                             double newTP1 = 0, double newTP2 = 0,
+                                             string contextChange = "");
+
+   //--- Transition vers EXIT_PRIORITY
+   //--- CONDITIONS: Au moins 1 condition de sortie
+   bool                    TransitionToExit(string symbol, SExitConditions &conditions);
+
+   //--- Retour à NEUTRAL
+   void                    ResetToNeutral(string symbol);
+
+   //--- ============ GETTERS ============
+
+   //--- Obtenir le setup actif d'un marché
+   SActiveSetup            GetActiveSetup(string symbol);
+   bool                    HasActiveSetup(string symbol);
+
+   //--- Historique
+   int                     GetHistoryCount();
+   SAlertData              GetHistoryAlert(int index);
+   void                    ClearHistory();
+
+   //--- ============ VALIDATION CHECKLIST ============
+
+   //--- Valider les conditions PRE_SIGNAL (3/5 minimum)
+   bool                    ValidatePreSignalConditions(SPreSignalConditions &cond);
+
+   //--- Valider les conditions SETUP (4/5 minimum)
+   bool                    ValidateSetupConditions(SSetupConditions &cond);
+
+   //--- Valider les conditions EXIT (au moins 1)
+   bool                    ValidateExitConditions(SExitConditions &cond);
+
+   //--- ============ COMPATIBILITÉ ANCIENNE API ============
+   bool                    ValidateChecklist(bool contextOK, bool confluenceOK,
+                                             bool candleSignalOK, bool volumeOK,
+                                             bool structureOK, int &validatedCount);
+   void                    SendSetupAlert(string symbol, ENUM_TIMEFRAMES tf, bool isBuy,
+                                          string message, string details, int conditions);
+   void                    SendPatternAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                            string patternName, string details);
+   void                    SendSMCAlert(string symbol, ENUM_TIMEFRAMES tf, string smcType, string details);
+   void                    SendDivergenceAlert(string symbol, ENUM_TIMEFRAMES tf, string divType, string details);
+   void                    SendMTFAlert(string symbol, string alignment, string details);
+   void                    SendVolumeAlert(string symbol, ENUM_TIMEFRAMES tf, string volumeState, string details);
+   void                    SendRiskAlert(string symbol, string message);
+
+   //--- ============ NOTIFICATION DÉMARRAGE ============
+   void                    SendStartupAlert(string symbol, ENUM_TIMEFRAMES tf);
+
+   //--- ============ UTILITAIRES ============
+   string                  GetStateSummary(string symbol);
+   string                  GetAllMarketsSummary();
 };
 
 //+------------------------------------------------------------------+
@@ -136,13 +475,19 @@ CAlertSystem::CAlertSystem()
    m_enableSound = true;
    m_enablePopup = true;
    m_enableTelegram = false;
-
    m_telegramBotToken = "";
    m_telegramChatId = "";
 
+   m_minAlertIntervalSec = 0;        // PAS de limite - alertes immédiates
+   m_preSignalCooldownSec = 0;       // PAS de limite - alertes immédiates
+   m_setupAlertCooldownSec = 0;      // PAS de limite - alertes immédiates
+
+   m_marketCount = 0;
    m_maxHistory = 100;
-   m_lastAlertTime = 0;
-   m_minAlertIntervalSec = 60; // 1 minute minimum entre alertes
+   m_nextSetupId = 1;
+
+   ArrayResize(m_marketStates, 0);
+   ArrayResize(m_alertHistory, 0);
 }
 
 //+------------------------------------------------------------------+
@@ -150,108 +495,636 @@ CAlertSystem::CAlertSystem()
 //+------------------------------------------------------------------+
 CAlertSystem::~CAlertSystem()
 {
-   ArrayFree(m_alertHistory);
+   Deinit();
 }
 
 //+------------------------------------------------------------------+
-//| Configuration                                                     |
+//| Initialisation                                                    |
 //+------------------------------------------------------------------+
-void CAlertSystem::EnablePush(bool enable)        { m_enablePush = enable; }
-void CAlertSystem::EnableEmail(bool enable)       { m_enableEmail = enable; }
-void CAlertSystem::EnableSound(bool enable)       { m_enableSound = enable; }
-void CAlertSystem::EnablePopup(bool enable)       { m_enablePopup = enable; }
-
-void CAlertSystem::EnableTelegram(bool enable, string botToken, string chatId)
+bool CAlertSystem::Init()
 {
-   m_enableTelegram = enable;
-   m_telegramBotToken = botToken;
-   m_telegramChatId = chatId;
-}
+   ArrayResize(m_marketStates, 0);
+   ArrayResize(m_alertHistory, 0);
+   m_marketCount = 0;
+   m_nextSetupId = 1;
 
-void CAlertSystem::SetMinInterval(int seconds)
-{
-   m_minAlertIntervalSec = seconds;
-}
-
-//+------------------------------------------------------------------+
-//| Vérifier si on peut envoyer une alerte                            |
-//+------------------------------------------------------------------+
-bool CAlertSystem::CanSendAlert()
-{
-   datetime now = TimeCurrent();
-   if(now - m_lastAlertTime < m_minAlertIntervalSec)
-      return false;
-
-   m_lastAlertTime = now;
+   Print("AlertSystem initialisé - Machine à états active");
    return true;
 }
 
 //+------------------------------------------------------------------+
-//| Ajouter à l'historique                                            |
+//| Libération des ressources                                         |
 //+------------------------------------------------------------------+
-void CAlertSystem::AddToHistory(SAlert &alert)
+void CAlertSystem::Deinit()
 {
-   int size = ArraySize(m_alertHistory);
-
-   if(size >= m_maxHistory)
-   {
-      // Supprimer la plus ancienne
-      for(int i = 0; i < size - 1; i++)
-         m_alertHistory[i] = m_alertHistory[i + 1];
-      ArrayResize(m_alertHistory, size);
-   }
-   else
-   {
-      ArrayResize(m_alertHistory, size + 1);
-   }
-
-   m_alertHistory[ArraySize(m_alertHistory) - 1] = alert;
+   ArrayFree(m_marketStates);
+   ArrayFree(m_alertHistory);
+   m_marketCount = 0;
 }
 
 //+------------------------------------------------------------------+
-//| CHECKLIST FINALE - RÈGLE: Minimum 4 conditions sur 5             |
-//| - Contexte OK                                                     |
-//| - Zone de confluence OK                                           |
-//| - Signal bougie + volume OK                                       |
-//| - Minimum 4 conditions sur 5 validées                             |
+//| Configuration Telegram                                            |
 //+------------------------------------------------------------------+
-bool CAlertSystem::ValidateChecklist(bool contextOK, bool confluenceOK,
-                                     bool candleSignalOK, bool volumeOK,
-                                     bool structureOK, int &validatedCount)
+void CAlertSystem::EnableTelegram(bool enable, string token, string chatId)
 {
-   validatedCount = 0;
-
-   if(contextOK) validatedCount++;
-   if(confluenceOK) validatedCount++;
-   if(candleSignalOK) validatedCount++;
-   if(volumeOK) validatedCount++;
-   if(structureOK) validatedCount++;
-
-   // RÈGLE: Minimum 4 conditions sur 5 validées
-   return (validatedCount >= 4);
+   m_enableTelegram = enable;
+   m_telegramBotToken = token;
+   m_telegramChatId = chatId;
 }
 
 //+------------------------------------------------------------------+
-//| Envoyer une alerte                                                |
+//| Trouver l'index d'un marché                                       |
 //+------------------------------------------------------------------+
-void CAlertSystem::SendAlert(SAlert &alert)
+int CAlertSystem::FindMarketIndex(string symbol)
 {
-   // Vérifier l'intervalle minimum
-   if(!CanSendAlert())
+   for(int i = 0; i < m_marketCount; i++)
    {
-      Print("Alerte ignorée - intervalle minimum non respecté");
-      return;
+      if(m_marketStates[i].symbol == symbol)
+         return i;
+   }
+   return -1;
+}
+
+//+------------------------------------------------------------------+
+//| Ajouter un nouveau marché                                         |
+//+------------------------------------------------------------------+
+int CAlertSystem::AddMarket(string symbol)
+{
+   int index = FindMarketIndex(symbol);
+   if(index >= 0) return index;
+
+   ArrayResize(m_marketStates, m_marketCount + 1);
+   m_marketStates[m_marketCount].Reset();
+   m_marketStates[m_marketCount].symbol = symbol;
+   m_marketStates[m_marketCount].state = STATE_NEUTRAL;
+
+   m_marketCount++;
+   return m_marketCount - 1;
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier si on peut envoyer une alerte (anti-spam)               |
+//+------------------------------------------------------------------+
+bool CAlertSystem::CanSendAlert(int marketIndex, ENUM_ALERT_TYPE type)
+{
+   if(marketIndex < 0 || marketIndex >= m_marketCount)
+      return false;
+
+   datetime now = TimeCurrent();
+   datetime lastAlert = m_marketStates[marketIndex].lastAlertTime;
+
+   int cooldown = m_minAlertIntervalSec;
+
+   switch(type)
+   {
+      case ALERT_PRE_SIGNAL:
+         cooldown = m_preSignalCooldownSec;
+         break;
+      case ALERT_SETUP_SIGNAL:
+         cooldown = m_setupAlertCooldownSec;
+         break;
+      case ALERT_EXIT:
+         cooldown = 0; // EXIT toujours prioritaire
+         break;
+      default:
+         cooldown = m_minAlertIntervalSec;
+         break;
    }
 
+   return (now - lastAlert >= cooldown);
+}
+
+//+------------------------------------------------------------------+
+//| Mettre à jour le temps de dernière alerte                         |
+//+------------------------------------------------------------------+
+void CAlertSystem::UpdateLastAlertTime(int marketIndex, ENUM_ALERT_TYPE type)
+{
+   if(marketIndex >= 0 && marketIndex < m_marketCount)
+   {
+      m_marketStates[marketIndex].lastAlertTime = TimeCurrent();
+      m_marketStates[marketIndex].lastAlertType = type;
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Obtenir l'état d'un marché                                        |
+//+------------------------------------------------------------------+
+ENUM_BOT_STATE CAlertSystem::GetMarketState(string symbol)
+{
+   int index = FindMarketIndex(symbol);
+   if(index < 0) return STATE_NEUTRAL;
+
+   return m_marketStates[index].state;
+}
+
+//+------------------------------------------------------------------+
+//| Valider conditions PRE_SIGNAL (3/5 minimum)                       |
+//+------------------------------------------------------------------+
+bool CAlertSystem::ValidatePreSignalConditions(SPreSignalConditions &cond)
+{
+   cond.Calculate();
+   return (cond.validCount >= 3);
+}
+
+//+------------------------------------------------------------------+
+//| Valider conditions SETUP (4/5 minimum)                            |
+//+------------------------------------------------------------------+
+bool CAlertSystem::ValidateSetupConditions(SSetupConditions &cond)
+{
+   cond.Calculate();
+   return (cond.validCount >= 4);
+}
+
+//+------------------------------------------------------------------+
+//| Valider conditions EXIT (au moins 1)                              |
+//+------------------------------------------------------------------+
+bool CAlertSystem::ValidateExitConditions(SExitConditions &cond)
+{
+   cond.DetermineMainReason();
+   return cond.HasAnyExitSignal();
+}
+
+//+------------------------------------------------------------------+
+//| TRANSITION: NEUTRAL/PRE_SIGNAL → PRE_SIGNAL                       |
+//| 🟡 PRE_SIGNAL - Contexte en cours (pas d'engagement)              |
+//+------------------------------------------------------------------+
+bool CAlertSystem::TransitionToPreSignal(string symbol, ENUM_TIMEFRAMES tf,
+                                         ENUM_SETUP_DIRECTION dir,
+                                         SPreSignalConditions &conditions)
+{
+   // Valider les conditions (3/5 minimum)
+   if(!ValidatePreSignalConditions(conditions))
+   {
+      Print("PRE_SIGNAL refusé pour ", symbol, " - Conditions: ", conditions.validCount, "/5 (min 3)");
+      return false;
+   }
+
+   int index = AddMarket(symbol);
+
+   // Si déjà en SETUP_ACTIVE, pas de PRE_SIGNAL
+   if(m_marketStates[index].state == STATE_SETUP_ACTIVE)
+   {
+      Print("PRE_SIGNAL ignoré pour ", symbol, " - SETUP_ACTIVE en cours");
+      return false;
+   }
+
+   // Anti-spam
+   if(!CanSendAlert(index, ALERT_PRE_SIGNAL))
+   {
+      return false;
+   }
+
+   // Mettre à jour l'état
+   m_marketStates[index].state = STATE_PRE_SIGNAL;
+   m_marketStates[index].lastStateChange = TimeCurrent();
+   m_marketStates[index].preSignalCount = conditions.validCount;
+   m_marketStates[index].preSignalReasons[0] = conditions.hasCompression;
+   m_marketStates[index].preSignalReasons[1] = conditions.hasAccumulation;
+   m_marketStates[index].preSignalReasons[2] = conditions.nearMajorZone;
+   m_marketStates[index].preSignalReasons[3] = conditions.hasDivergence;
+   m_marketStates[index].preSignalReasons[4] = conditions.hasEMAConfluence;
+
+   // Créer et envoyer l'alerte
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_PRE_SIGNAL;
+   alert.priority = PRIORITY_MEDIUM;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.direction = dir;
+   alert.title = "🟡 PRE_SIGNAL";
+   alert.body = FormatPreSignalAlert(symbol, tf, dir, conditions);
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+   UpdateLastAlertTime(index, ALERT_PRE_SIGNAL);
+
+   Print("✓ PRE_SIGNAL émis pour ", symbol, " - Direction: ", DirectionToString(dir));
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| TRANSITION: PRE_SIGNAL → SETUP_ACTIVE                             |
+//| 🚨 SETUP_SIGNAL - Entrée potentielle confirmée                    |
+//+------------------------------------------------------------------+
+bool CAlertSystem::TransitionToSetupActive(string symbol, ENUM_TIMEFRAMES tf,
+                                           ENUM_SETUP_DIRECTION dir,
+                                           SSetupConditions &conditions,
+                                           double entry, double sl, double tp1, double tp2,
+                                           double riskPct)
+{
+   // Valider les conditions (4/5 minimum)
+   if(!ValidateSetupConditions(conditions))
+   {
+      Print("SETUP refusé pour ", symbol, " - Conditions: ", conditions.validCount, "/5 (min 4)");
+      return false;
+   }
+
+   // Valider le volume (>= 150%)
+   if(!conditions.volumeOK)
+   {
+      Print("SETUP refusé pour ", symbol, " - Volume insuffisant (<150%)");
+      return false;
+   }
+
+   // Valider la bougie (rejet ou impulsion)
+   if(!conditions.candleSignalOK)
+   {
+      Print("SETUP refusé pour ", symbol, " - Pas de signal bougie valide");
+      return false;
+   }
+
+   int index = AddMarket(symbol);
+
+   // Vérifier qu'il n'y a pas déjà un setup actif sur ce marché
+   if(m_marketStates[index].state == STATE_SETUP_ACTIVE &&
+      m_marketStates[index].activeSetup.isValid)
+   {
+      Print("SETUP ignoré pour ", symbol, " - Un setup est déjà actif");
+      return false;
+   }
+
+   // Anti-spam
+   if(!CanSendAlert(index, ALERT_SETUP_SIGNAL))
+   {
+      return false;
+   }
+
+   // Créer le setup actif
+   SActiveSetup setup;
+   setup.Reset();
+   setup.id = m_nextSetupId++;
+   setup.symbol = symbol;
+   setup.timeframe = tf;
+   setup.direction = dir;
+   setup.entryPrice = entry;
+   setup.stopLoss = sl;
+   setup.tp1 = tp1;
+   setup.tp2 = tp2;
+   setup.riskPercent = riskPct;
+   setup.conditionsValidated = conditions.validCount;
+   setup.createdAt = TimeCurrent();
+   setup.lastUpdate = TimeCurrent();
+   setup.updateCount = 0;
+   setup.isValid = true;
+
+   // Construire la raison
+   setup.reason = "";
+   if(conditions.contextOK) setup.reason += "MTF+ ";
+   if(conditions.confluenceOK) setup.reason += "Zone+ ";
+   if(conditions.candleSignalOK) setup.reason += "Bougie+ ";
+   if(conditions.volumeOK) setup.reason += "Volume+ ";
+   if(conditions.structureOK) setup.reason += "Structure+ ";
+
+   // Mettre à jour l'état
+   m_marketStates[index].state = STATE_SETUP_ACTIVE;
+   m_marketStates[index].lastStateChange = TimeCurrent();
+   m_marketStates[index].activeSetup = setup;
+
+   // Créer et envoyer l'alerte
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_SETUP_SIGNAL;
+   alert.priority = PRIORITY_HIGH;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.direction = dir;
+   alert.title = "🚨 SETUP_SIGNAL";
+   alert.body = FormatSetupSignalAlert(setup, conditions);
+   alert.entryPrice = entry;
+   alert.stopLoss = sl;
+   alert.tp1 = tp1;
+   alert.tp2 = tp2;
+   alert.riskPercent = riskPct;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+   UpdateLastAlertTime(index, ALERT_SETUP_SIGNAL);
+
+   Print("✓ SETUP_SIGNAL émis pour ", symbol, " - ID: ", setup.id, " - Direction: ", DirectionToString(dir));
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| MISE À JOUR: SETUP_ACTIVE (MJ_SETUP)                              |
+//| 🔁 MJ_SETUP - Ajustement d'un setup existant                      |
+//+------------------------------------------------------------------+
+bool CAlertSystem::UpdateActiveSetup(string symbol,
+                                     double newEntry, double newSL,
+                                     double newTP1, double newTP2,
+                                     string contextChange)
+{
+   int index = FindMarketIndex(symbol);
+   if(index < 0)
+   {
+      Print("MJ_SETUP refusé - Marché ", symbol, " non trouvé");
+      return false;
+   }
+
+   // Vérifier qu'un setup existe
+   if(m_marketStates[index].state != STATE_SETUP_ACTIVE ||
+      !m_marketStates[index].activeSetup.isValid)
+   {
+      Print("MJ_SETUP refusé pour ", symbol, " - Pas de setup actif");
+      return false;
+   }
+
+   // Vérifier qu'au moins 1 élément a changé
+   SActiveSetup &setup = m_marketStates[index].activeSetup;
+   string changes = "";
+   bool hasChange = false;
+
+   if(newEntry > 0 && newEntry != setup.entryPrice)
+   {
+      changes += "Entry: " + DoubleToStr(setup.entryPrice, 5) + " → " + DoubleToStr(newEntry, 5) + "\n";
+      setup.entryPrice = newEntry;
+      hasChange = true;
+   }
+
+   if(newSL > 0 && newSL != setup.stopLoss)
+   {
+      changes += "SL: " + DoubleToStr(setup.stopLoss, 5) + " → " + DoubleToStr(newSL, 5) + "\n";
+      setup.stopLoss = newSL;
+      hasChange = true;
+   }
+
+   if(newTP1 > 0 && newTP1 != setup.tp1)
+   {
+      changes += "TP1: " + DoubleToStr(setup.tp1, 5) + " → " + DoubleToStr(newTP1, 5) + "\n";
+      setup.tp1 = newTP1;
+      hasChange = true;
+   }
+
+   if(newTP2 > 0 && newTP2 != setup.tp2)
+   {
+      changes += "TP2: " + DoubleToStr(setup.tp2, 5) + " → " + DoubleToStr(newTP2, 5) + "\n";
+      setup.tp2 = newTP2;
+      hasChange = true;
+   }
+
+   if(contextChange != "")
+   {
+      changes += "Contexte: " + contextChange + "\n";
+      hasChange = true;
+   }
+
+   if(!hasChange)
+   {
+      Print("MJ_SETUP refusé pour ", symbol, " - Aucun changement détecté");
+      return false;
+   }
+
+   // Anti-spam (plus court pour MJ)
+   if(!CanSendAlert(index, ALERT_MJ_SETUP))
+   {
+      // Mettre à jour quand même mais sans alerte
+      setup.lastUpdate = TimeCurrent();
+      setup.updateCount++;
+      return true;
+   }
+
+   // Mettre à jour
+   setup.lastUpdate = TimeCurrent();
+   setup.updateCount++;
+
+   // Créer et envoyer l'alerte
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_MJ_SETUP;
+   alert.priority = PRIORITY_MEDIUM;
+   alert.symbol = symbol;
+   alert.timeframe = setup.timeframe;
+   alert.direction = setup.direction;
+   alert.title = "🔁 MJ_SETUP";
+   alert.body = FormatMJSetupAlert(setup, changes);
+   alert.entryPrice = setup.entryPrice;
+   alert.stopLoss = setup.stopLoss;
+   alert.tp1 = setup.tp1;
+   alert.tp2 = setup.tp2;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+   UpdateLastAlertTime(index, ALERT_MJ_SETUP);
+
+   Print("✓ MJ_SETUP émis pour ", symbol, " - Update #", setup.updateCount);
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| TRANSITION: SETUP_ACTIVE → EXIT_PRIORITY                          |
+//| 🟢 EXIT_ALERT - Sortie recommandée (priorité max)                 |
+//+------------------------------------------------------------------+
+bool CAlertSystem::TransitionToExit(string symbol, SExitConditions &conditions)
+{
+   // Valider qu'au moins 1 condition de sortie
+   if(!ValidateExitConditions(conditions))
+   {
+      return false;
+   }
+
+   int index = FindMarketIndex(symbol);
+   if(index < 0)
+   {
+      Print("EXIT refusé - Marché ", symbol, " non trouvé");
+      return false;
+   }
+
+   // Doit avoir un setup actif
+   if(m_marketStates[index].state != STATE_SETUP_ACTIVE ||
+      !m_marketStates[index].activeSetup.isValid)
+   {
+      Print("EXIT refusé pour ", symbol, " - Pas de setup actif");
+      return false;
+   }
+
+   SActiveSetup &setup = m_marketStates[index].activeSetup;
+
+   // Mettre à jour l'état (priorité max, pas de cooldown)
+   m_marketStates[index].state = STATE_EXIT_PRIORITY;
+   m_marketStates[index].lastStateChange = TimeCurrent();
+
+   // Créer et envoyer l'alerte
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_EXIT;
+   alert.priority = PRIORITY_CRITICAL;
+   alert.symbol = symbol;
+   alert.timeframe = setup.timeframe;
+   alert.direction = setup.direction;
+   alert.title = "🟢 EXIT_ALERT";
+   alert.body = FormatExitAlert(setup, conditions.mainReason);
+   alert.exitReason = conditions.mainReason;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+   UpdateLastAlertTime(index, ALERT_EXIT);
+
+   // Invalider le setup
+   setup.isValid = false;
+
+   // Retour automatique à NEUTRAL après EXIT
+   m_marketStates[index].state = STATE_NEUTRAL;
+
+   Print("✓ EXIT_ALERT émis pour ", symbol, " - Raison: ", ExitReasonToString(conditions.mainReason));
+   return true;
+}
+
+//+------------------------------------------------------------------+
+//| Retour à NEUTRAL (reset manuel ou après exit)                     |
+//+------------------------------------------------------------------+
+void CAlertSystem::ResetToNeutral(string symbol)
+{
+   int index = FindMarketIndex(symbol);
+   if(index < 0) return;
+
+   m_marketStates[index].state = STATE_NEUTRAL;
+   m_marketStates[index].lastStateChange = TimeCurrent();
+   m_marketStates[index].activeSetup.Reset();
+   m_marketStates[index].preSignalCount = 0;
+   for(int i = 0; i < 5; i++) m_marketStates[index].preSignalReasons[i] = false;
+
+   Print("✓ ", symbol, " - Reset to NEUTRAL");
+}
+
+//+------------------------------------------------------------------+
+//| Obtenir le setup actif                                            |
+//+------------------------------------------------------------------+
+SActiveSetup CAlertSystem::GetActiveSetup(string symbol)
+{
+   SActiveSetup empty;
+   empty.Reset();
+
+   int index = FindMarketIndex(symbol);
+   if(index < 0) return empty;
+
+   return m_marketStates[index].activeSetup;
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier si un setup est actif                                    |
+//+------------------------------------------------------------------+
+bool CAlertSystem::HasActiveSetup(string symbol)
+{
+   int index = FindMarketIndex(symbol);
+   if(index < 0) return false;
+
+   return (m_marketStates[index].state == STATE_SETUP_ACTIVE &&
+           m_marketStates[index].activeSetup.isValid);
+}
+
+//+------------------------------------------------------------------+
+//| Formatage alerte PRE_SIGNAL                                       |
+//+------------------------------------------------------------------+
+string CAlertSystem::FormatPreSignalAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                          ENUM_SETUP_DIRECTION dir,
+                                          SPreSignalConditions &cond)
+{
+   string msg = "";
+
+   msg += "🟡 PRE_SIGNAL\n";
+   msg += "Marché: " + symbol + " " + TimeframeToString(tf) + "\n";
+   msg += "Setup: " + DirectionToString(dir) + " (EN COURS)\n";
+   msg += "\n";
+   msg += "Conditions détectées (" + IntegerToString(cond.validCount) + "/5):\n";
+
+   if(cond.hasCompression)   msg += "✅ Compression détectée\n";
+   if(cond.hasAccumulation)  msg += "✅ Accumulation/Distribution\n";
+   if(cond.nearMajorZone)    msg += "✅ Proche zone majeure\n";
+   if(cond.hasDivergence)    msg += "✅ Divergence en formation\n";
+   if(cond.hasEMAConfluence) msg += "✅ Confluence EMA\n";
+
+   msg += "\n";
+   msg += "⚠️ Attendre confirmation\n";
+   msg += "⚠️ Pas d'entrée maintenant\n";
+
+   return msg;
+}
+
+//+------------------------------------------------------------------+
+//| Formatage alerte SETUP_SIGNAL                                     |
+//+------------------------------------------------------------------+
+string CAlertSystem::FormatSetupSignalAlert(SActiveSetup &setup, SSetupConditions &cond)
+{
+   string msg = "";
+   string dirStr = (setup.direction == DIRECTION_BUY) ? "Buy" : "Sell";
+   string entryType = (setup.direction == DIRECTION_BUY) ? "Buy Limit" : "Sell Limit";
+
+   msg += "🚨 SETUP_SIGNAL\n";
+   msg += "Marché: " + setup.symbol + "\n";
+   msg += "\n";
+   msg += entryType + " = " + DoubleToStr(setup.entryPrice, 5) + "\n";
+   msg += "SL = " + DoubleToStr(setup.stopLoss, 5) + "\n";
+   msg += "TP1 = " + DoubleToStr(setup.tp1, 5) + "\n";
+   msg += "TP2 = " + DoubleToStr(setup.tp2, 5) + "\n";
+   msg += "\n";
+   msg += "Risque: " + DoubleToStr(setup.riskPercent, 1) + "%\n";
+   msg += "\n";
+   msg += "Checklist (" + IntegerToString(cond.validCount) + "/5):\n";
+   msg += (cond.contextOK ? "✅" : "❌") + " Contexte MTF\n";
+   msg += (cond.confluenceOK ? "✅" : "❌") + " Zone confluence\n";
+   msg += (cond.candleSignalOK ? "✅" : "❌") + " Signal bougie\n";
+   msg += (cond.volumeOK ? "✅" : "❌") + " Volume ≥150%\n";
+   msg += (cond.structureOK ? "✅" : "❌") + " Structure SMC\n";
+
+   return msg;
+}
+
+//+------------------------------------------------------------------+
+//| Formatage alerte MJ_SETUP                                         |
+//+------------------------------------------------------------------+
+string CAlertSystem::FormatMJSetupAlert(SActiveSetup &setup, string changes)
+{
+   string msg = "";
+
+   msg += "🔁 MJ_SETUP\n";
+   msg += "Marché: " + setup.symbol + "\n";
+   msg += "\n";
+   msg += "Modifications:\n";
+   msg += changes;
+   msg += "\n";
+   msg += "Setup actuel:\n";
+   msg += "Entry = " + DoubleToStr(setup.entryPrice, 5) + "\n";
+   msg += "SL = " + DoubleToStr(setup.stopLoss, 5) + "\n";
+   msg += "TP1 = " + DoubleToStr(setup.tp1, 5) + "\n";
+   msg += "TP2 = " + DoubleToStr(setup.tp2, 5) + "\n";
+
+   return msg;
+}
+
+//+------------------------------------------------------------------+
+//| Formatage alerte EXIT                                             |
+//+------------------------------------------------------------------+
+string CAlertSystem::FormatExitAlert(SActiveSetup &setup, ENUM_EXIT_REASON reason)
+{
+   string msg = "";
+
+   msg += "🟢 EXIT_ALERT\n";
+   msg += "Marché: " + setup.symbol + "\n";
+   msg += "Position: " + DirectionToString(setup.direction) + "\n";
+   msg += "\n";
+   msg += "Décision: SORTIE RECOMMANDÉE\n";
+   msg += "\n";
+   msg += "Raison: " + ExitReasonToString(reason) + "\n";
+   msg += "\n";
+   msg += "⚠️ ACTION IMMÉDIATE REQUISE\n";
+
+   return msg;
+}
+
+//+------------------------------------------------------------------+
+//| Envoyer l'alerte (tous canaux)                                    |
+//+------------------------------------------------------------------+
+void CAlertSystem::DoSendAlert(SAlertData &alert)
+{
    alert.time = TimeCurrent();
    alert.isSent = true;
 
-   string fullMessage = BuildFullAlertMessage(alert);
+   string fullMessage = alert.body;
 
    // Popup MT5
    if(m_enablePopup)
    {
-      ShowPopup(GetAlertPrefix(alert.type), fullMessage);
+      ShowPopup(fullMessage);
    }
 
    // Son
@@ -260,16 +1133,17 @@ void CAlertSystem::SendAlert(SAlert &alert)
       PlayAlertSound(alert.priority);
    }
 
-   // Notification push
+   // Push
    if(m_enablePush)
    {
-      SendPushNotification(GetAlertPrefix(alert.type), alert.message);
+      SendPushNotification(alert.title, alert.body);
    }
 
    // Email
    if(m_enableEmail)
    {
-      SendEmailNotification(GetAlertPrefix(alert.type) + " - " + alert.symbol, fullMessage);
+      string subject = alert.title + " - " + alert.symbol;
+      SendEmailNotification(subject, fullMessage);
    }
 
    // Telegram
@@ -278,157 +1152,28 @@ void CAlertSystem::SendAlert(SAlert &alert)
       SendTelegramNotification(fullMessage);
    }
 
-   // Ajouter à l'historique
+   // Historique
    AddToHistory(alert);
 
    // Log
-   Print("ALERTE: ", fullMessage);
+   Print("ALERTE [", alert.title, "] ", alert.symbol);
 }
 
 //+------------------------------------------------------------------+
-//| Envoyer une alerte de setup                                       |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendSetupAlert(string symbol, ENUM_TIMEFRAMES tf, bool isBuy,
-                                  string message, string details, int conditions)
-{
-   SAlert alert;
-
-   alert.type = isBuy ? ALERT_SETUP_BUY : ALERT_SETUP_SELL;
-   alert.priority = (conditions >= 5) ? PRIORITY_CRITICAL : PRIORITY_HIGH;
-   alert.symbol = symbol;
-   alert.timeframe = tf;
-   alert.message = message;
-   alert.details = details;
-   alert.conditionsValidated = conditions;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Envoyer une alerte de pattern                                     |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendPatternAlert(string symbol, ENUM_TIMEFRAMES tf,
-                                    string patternName, string details)
-{
-   SAlert alert;
-
-   alert.type = ALERT_PATTERN;
-   alert.priority = PRIORITY_MEDIUM;
-   alert.symbol = symbol;
-   alert.timeframe = tf;
-   alert.message = "Pattern détecté: " + patternName;
-   alert.details = details;
-   alert.conditionsValidated = 0;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Envoyer une alerte SMC                                            |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendSMCAlert(string symbol, ENUM_TIMEFRAMES tf,
-                                string smcType, string details)
-{
-   SAlert alert;
-
-   alert.type = ALERT_SMC;
-   alert.priority = PRIORITY_HIGH;
-   alert.symbol = symbol;
-   alert.timeframe = tf;
-   alert.message = "SMC: " + smcType;
-   alert.details = details;
-   alert.conditionsValidated = 0;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Envoyer une alerte de divergence                                  |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendDivergenceAlert(string symbol, ENUM_TIMEFRAMES tf,
-                                       string divType, string details)
-{
-   SAlert alert;
-
-   alert.type = ALERT_DIVERGENCE;
-   alert.priority = PRIORITY_MEDIUM;
-   alert.symbol = symbol;
-   alert.timeframe = tf;
-   alert.message = "Divergence: " + divType;
-   alert.details = details;
-   alert.conditionsValidated = 0;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Envoyer une alerte MTF                                            |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendMTFAlert(string symbol, string alignment, string details)
-{
-   SAlert alert;
-
-   alert.type = ALERT_MTF;
-   alert.priority = PRIORITY_HIGH;
-   alert.symbol = symbol;
-   alert.timeframe = PERIOD_CURRENT;
-   alert.message = "MTF Aligné: " + alignment;
-   alert.details = details;
-   alert.conditionsValidated = 0;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Envoyer une alerte volume                                         |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendVolumeAlert(string symbol, ENUM_TIMEFRAMES tf,
-                                   string volumeState, string details)
-{
-   SAlert alert;
-
-   alert.type = ALERT_VOLUME;
-   alert.priority = PRIORITY_LOW;
-   alert.symbol = symbol;
-   alert.timeframe = tf;
-   alert.message = "Volume: " + volumeState;
-   alert.details = details;
-   alert.conditionsValidated = 0;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Envoyer une alerte de risque                                      |
-//+------------------------------------------------------------------+
-void CAlertSystem::SendRiskAlert(string symbol, string message)
-{
-   SAlert alert;
-
-   alert.type = ALERT_RISK;
-   alert.priority = PRIORITY_CRITICAL;
-   alert.symbol = symbol;
-   alert.timeframe = PERIOD_CURRENT;
-   alert.message = message;
-   alert.details = "";
-   alert.conditionsValidated = 0;
-
-   SendAlert(alert);
-}
-
-//+------------------------------------------------------------------+
-//| Notification push                                                 |
+//| Notification Push                                                 |
 //+------------------------------------------------------------------+
 void CAlertSystem::SendPushNotification(string title, string message)
 {
-   if(!SendNotification(title + ": " + message))
+   // Limiter la taille pour mobile
+   string shortMsg = StringSubstr(message, 0, 200);
+   if(!SendNotification(title + "\n" + shortMsg))
    {
       Print("Erreur envoi notification push");
    }
 }
 
 //+------------------------------------------------------------------+
-//| Notification email                                                |
+//| Notification Email                                                |
 //+------------------------------------------------------------------+
 void CAlertSystem::SendEmailNotification(string subject, string body)
 {
@@ -449,11 +1194,15 @@ void CAlertSystem::SendTelegramNotification(string message)
       return;
    }
 
+   // Encoder le message pour URL
+   string encodedMsg = message;
+   StringReplace(encodedMsg, " ", "%20");
+   StringReplace(encodedMsg, "\n", "%0A");
+
    string url = "https://api.telegram.org/bot" + m_telegramBotToken +
                 "/sendMessage?chat_id=" + m_telegramChatId +
-                "&text=" + message;
+                "&text=" + encodedMsg + "&parse_mode=HTML";
 
-   // Note: WebRequest nécessite une autorisation dans les paramètres MT5
    char data[];
    char result[];
    string headers;
@@ -463,12 +1212,12 @@ void CAlertSystem::SendTelegramNotification(string message)
 
    if(res != 200)
    {
-      Print("Erreur envoi Telegram, code: ", res);
+      Print("Erreur Telegram, code: ", res);
    }
 }
 
 //+------------------------------------------------------------------+
-//| Jouer un son d'alerte                                             |
+//| Son d'alerte                                                      |
 //+------------------------------------------------------------------+
 void CAlertSystem::PlayAlertSound(ENUM_ALERT_PRIORITY priority)
 {
@@ -476,6 +1225,7 @@ void CAlertSystem::PlayAlertSound(ENUM_ALERT_PRIORITY priority)
 
    switch(priority)
    {
+      case PRIORITY_INFO:     soundFile = "tick.wav"; break;
       case PRIORITY_LOW:      soundFile = "tick.wav"; break;
       case PRIORITY_MEDIUM:   soundFile = "alert.wav"; break;
       case PRIORITY_HIGH:     soundFile = "alert2.wav"; break;
@@ -487,62 +1237,33 @@ void CAlertSystem::PlayAlertSound(ENUM_ALERT_PRIORITY priority)
 }
 
 //+------------------------------------------------------------------+
-//| Afficher un popup                                                 |
+//| Popup MT5                                                         |
 //+------------------------------------------------------------------+
-void CAlertSystem::ShowPopup(string title, string message)
+void CAlertSystem::ShowPopup(string message)
 {
-   Alert(title, "\n", message);
+   Alert(message);
 }
 
 //+------------------------------------------------------------------+
-//| Construire le message complet                                     |
+//| Ajouter à l'historique                                            |
 //+------------------------------------------------------------------+
-string CAlertSystem::BuildFullAlertMessage(SAlert &alert)
+void CAlertSystem::AddToHistory(SAlertData &alert)
 {
-   string msg = "";
+   int size = ArraySize(m_alertHistory);
 
-   msg += "═══════════════════════════════\n";
-   msg += GetAlertPrefix(alert.type) + "\n";
-   msg += "═══════════════════════════════\n";
-   msg += "Symbole: " + alert.symbol + "\n";
-   msg += "Timeframe: " + TimeframeToString(alert.timeframe) + "\n";
-   msg += "Priorité: " + GetPriorityString(alert.priority) + "\n";
-   msg += "───────────────────────────────\n";
-   msg += alert.message + "\n";
-
-   if(alert.details != "")
+   if(size >= m_maxHistory)
    {
-      msg += "───────────────────────────────\n";
-      msg += alert.details + "\n";
+      // FIFO - supprimer la plus ancienne
+      for(int i = 0; i < size - 1; i++)
+         m_alertHistory[i] = m_alertHistory[i + 1];
+      ArrayResize(m_alertHistory, size);
+   }
+   else
+   {
+      ArrayResize(m_alertHistory, size + 1);
    }
 
-   if(alert.conditionsValidated > 0)
-   {
-      msg += "───────────────────────────────\n";
-      msg += "Conditions validées: " + IntegerToString(alert.conditionsValidated) + "/5\n";
-   }
-
-   msg += "───────────────────────────────\n";
-   msg += "Heure: " + TimeToString(alert.time, TIME_DATE | TIME_MINUTES) + "\n";
-   msg += "═══════════════════════════════";
-
-   return msg;
-}
-
-//+------------------------------------------------------------------+
-//| Construire un message de setup                                    |
-//+------------------------------------------------------------------+
-string CAlertSystem::BuildSetupMessage(string symbol, bool isBuy, string details, int conditions)
-{
-   string direction = isBuy ? "ACHAT" : "VENTE";
-   string emoji = isBuy ? "🟢" : "🔴";
-
-   string msg = emoji + " SETUP " + direction + " DÉTECTÉ!\n\n";
-   msg += "Symbole: " + symbol + "\n";
-   msg += "Conditions: " + IntegerToString(conditions) + "/5 validées\n\n";
-   msg += details;
-
-   return msg;
+   m_alertHistory[ArraySize(m_alertHistory) - 1] = alert;
 }
 
 //+------------------------------------------------------------------+
@@ -553,10 +1274,14 @@ int CAlertSystem::GetHistoryCount()
    return ArraySize(m_alertHistory);
 }
 
-SAlert CAlertSystem::GetHistoryAlert(int index)
+SAlertData CAlertSystem::GetHistoryAlert(int index)
 {
-   SAlert empty;
-   if(index < 0 || index >= ArraySize(m_alertHistory)) return empty;
+   SAlertData empty;
+   empty.Reset();
+
+   if(index < 0 || index >= ArraySize(m_alertHistory))
+      return empty;
+
    return m_alertHistory[index];
 }
 
@@ -567,43 +1292,7 @@ void CAlertSystem::ClearHistory()
 }
 
 //+------------------------------------------------------------------+
-//| Obtenir le préfixe de l'alerte                                    |
-//+------------------------------------------------------------------+
-string CAlertSystem::GetAlertPrefix(ENUM_ALERT_TYPE type)
-{
-   switch(type)
-   {
-      case ALERT_SETUP_BUY:    return "🟢 SETUP ACHAT";
-      case ALERT_SETUP_SELL:   return "🔴 SETUP VENTE";
-      case ALERT_PATTERN:      return "📊 PATTERN";
-      case ALERT_DIVERGENCE:   return "📈 DIVERGENCE";
-      case ALERT_SMC:          return "💰 SMART MONEY";
-      case ALERT_MTF:          return "🎯 MTF ALIGNÉ";
-      case ALERT_VOLUME:       return "📊 VOLUME";
-      case ALERT_RISK:         return "⚠️ RISQUE";
-      case ALERT_STRUCTURE:    return "📐 STRUCTURE";
-      case ALERT_INFO:         return "ℹ️ INFO";
-      default:                 return "🔔 ALERTE";
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Obtenir la priorité en string                                     |
-//+------------------------------------------------------------------+
-string CAlertSystem::GetPriorityString(ENUM_ALERT_PRIORITY priority)
-{
-   switch(priority)
-   {
-      case PRIORITY_LOW:      return "Basse";
-      case PRIORITY_MEDIUM:   return "Moyenne";
-      case PRIORITY_HIGH:     return "HAUTE";
-      case PRIORITY_CRITICAL: return "⚡ CRITIQUE";
-      default:                return "?";
-   }
-}
-
-//+------------------------------------------------------------------+
-//| Convertir timeframe en string                                     |
+//| Conversion timeframe → string                                     |
 //+------------------------------------------------------------------+
 string CAlertSystem::TimeframeToString(ENUM_TIMEFRAMES tf)
 {
@@ -623,23 +1312,281 @@ string CAlertSystem::TimeframeToString(ENUM_TIMEFRAMES tf)
 }
 
 //+------------------------------------------------------------------+
-//| Convertir type d'alerte en string                                 |
+//| Conversion direction → string                                     |
 //+------------------------------------------------------------------+
-string CAlertSystem::AlertTypeToString(ENUM_ALERT_TYPE type)
+string CAlertSystem::DirectionToString(ENUM_SETUP_DIRECTION dir)
 {
-   switch(type)
+   switch(dir)
    {
-      case ALERT_SETUP_BUY:    return "Setup Achat";
-      case ALERT_SETUP_SELL:   return "Setup Vente";
-      case ALERT_PATTERN:      return "Pattern";
-      case ALERT_DIVERGENCE:   return "Divergence";
-      case ALERT_SMC:          return "Smart Money";
-      case ALERT_MTF:          return "Multi-Timeframe";
-      case ALERT_VOLUME:       return "Volume";
-      case ALERT_RISK:         return "Risque";
-      case ALERT_STRUCTURE:    return "Structure";
-      case ALERT_INFO:         return "Info";
-      default:                 return "Inconnu";
+      case DIRECTION_BUY:  return "BUY";
+      case DIRECTION_SELL: return "SELL";
+      default:             return "NONE";
    }
 }
+
+//+------------------------------------------------------------------+
+//| Conversion état → string                                          |
+//+------------------------------------------------------------------+
+string CAlertSystem::StateToString(ENUM_BOT_STATE state)
+{
+   switch(state)
+   {
+      case STATE_NEUTRAL:       return "NEUTRAL";
+      case STATE_PRE_SIGNAL:    return "PRE_SIGNAL";
+      case STATE_SETUP_ACTIVE:  return "SETUP_ACTIVE";
+      case STATE_EXIT_PRIORITY: return "EXIT_PRIORITY";
+      default:                  return "?";
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Conversion raison sortie → string                                 |
+//+------------------------------------------------------------------+
+string CAlertSystem::ExitReasonToString(ENUM_EXIT_REASON reason)
+{
+   switch(reason)
+   {
+      case EXIT_CHOCH_AGAINST:      return "CHoCH contre position";
+      case EXIT_BOS_INVERSE:        return "BOS inverse sur HTF";
+      case EXIT_DIVERGENCE:         return "Divergence contraire confirmée";
+      case EXIT_STRONG_CANDLE:      return "Bougie opposée forte (>70%)";
+      case EXIT_VOLUME_REVERSAL:    return "Volume de retournement";
+      case EXIT_EMA_BREAK:          return "Cassure EMA 50/200";
+      case EXIT_MTF_MISALIGNMENT:   return "Désalignement MTF";
+      case EXIT_ZONE_INVALIDATED:   return "Zone invalidée";
+      default:                      return "?";
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Double to String helper                                           |
+//+------------------------------------------------------------------+
+string CAlertSystem::DoubleToStr(double value, int digits)
+{
+   return DoubleToString(value, digits);
+}
+
+//+------------------------------------------------------------------+
+//| Résumé état d'un marché                                           |
+//+------------------------------------------------------------------+
+string CAlertSystem::GetStateSummary(string symbol)
+{
+   int index = FindMarketIndex(symbol);
+   if(index < 0)
+      return symbol + ": Non suivi";
+
+   SMarketState &state = m_marketStates[index];
+   string summary = symbol + ": " + StateToString(state.state);
+
+   if(state.state == STATE_SETUP_ACTIVE && state.activeSetup.isValid)
+   {
+      summary += " | " + DirectionToString(state.activeSetup.direction);
+      summary += " | Entry: " + DoubleToStr(state.activeSetup.entryPrice, 5);
+   }
+   else if(state.state == STATE_PRE_SIGNAL)
+   {
+      summary += " | Conditions: " + IntegerToString(state.preSignalCount) + "/5";
+   }
+
+   return summary;
+}
+
+//+------------------------------------------------------------------+
+//| Résumé tous marchés                                               |
+//+------------------------------------------------------------------+
+string CAlertSystem::GetAllMarketsSummary()
+{
+   string summary = "══════ ÉTAT MARCHÉS ══════\n";
+
+   for(int i = 0; i < m_marketCount; i++)
+   {
+      summary += GetStateSummary(m_marketStates[i].symbol) + "\n";
+   }
+
+   return summary;
+}
+
+//+------------------------------------------------------------------+
+//| Notification de démarrage du bot sur une paire                    |
+//+------------------------------------------------------------------+
+void CAlertSystem::SendStartupAlert(string symbol, ENUM_TIMEFRAMES tf)
+{
+   // Obtenir date et heure
+   datetime now = TimeCurrent();
+   MqlDateTime dt;
+   TimeToStruct(now, dt);
+
+   // Formater la date: DD/MM/YYYY
+   string dateStr = StringFormat("%02d/%02d/%04d", dt.day, dt.mon, dt.year);
+
+   // Formater l'heure: HHhMM
+   string timeStr = StringFormat("%02dH%02d", dt.hour, dt.min);
+
+   // Construire le message
+   string msg = "";
+   msg += "🚀 ANALYSE " + symbol + "\n";
+   msg += "\n";
+   msg += "Timeframe = " + TimeframeToString(tf) + "\n";
+   msg += "Date = " + dateStr + "\n";
+   msg += "Heure = " + timeStr + "\n";
+   msg += "\n";
+   msg += "✅ Bot analyste actif\n";
+   msg += "⚠️ Analyse uniquement - Pas de trade auto";
+
+   // Créer l'alerte
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_INFO;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.title = "🚀 DÉMARRAGE ANALYSE";
+   alert.body = msg;
+   alert.time = now;
+
+   // Envoyer
+   DoSendAlert(alert);
+
+   Print("✓ Bot démarré sur ", symbol, " - TF: ", TimeframeToString(tf));
+}
+
+//+------------------------------------------------------------------+
+//| ============ COMPATIBILITÉ ANCIENNE API ============              |
+//+------------------------------------------------------------------+
+
+bool CAlertSystem::ValidateChecklist(bool contextOK, bool confluenceOK,
+                                     bool candleSignalOK, bool volumeOK,
+                                     bool structureOK, int &validatedCount)
+{
+   SSetupConditions cond;
+   cond.contextOK = contextOK;
+   cond.confluenceOK = confluenceOK;
+   cond.candleSignalOK = candleSignalOK;
+   cond.volumeOK = volumeOK;
+   cond.structureOK = structureOK;
+   cond.Calculate();
+
+   validatedCount = cond.validCount;
+   return ValidateSetupConditions(cond);
+}
+
+void CAlertSystem::SendSetupAlert(string symbol, ENUM_TIMEFRAMES tf, bool isBuy,
+                                  string message, string details, int conditions)
+{
+   // Créer les conditions
+   SSetupConditions cond;
+   cond.contextOK = true;
+   cond.confluenceOK = true;
+   cond.candleSignalOK = true;
+   cond.volumeOK = (conditions >= 4);
+   cond.structureOK = (conditions >= 3);
+   cond.Calculate();
+
+   // Utiliser la nouvelle API
+   double price = SymbolInfoDouble(symbol, SYMBOL_BID);
+   double sl = isBuy ? price - 100 * SymbolInfoDouble(symbol, SYMBOL_POINT) :
+                       price + 100 * SymbolInfoDouble(symbol, SYMBOL_POINT);
+   double tp1 = isBuy ? price + 150 * SymbolInfoDouble(symbol, SYMBOL_POINT) :
+                        price - 150 * SymbolInfoDouble(symbol, SYMBOL_POINT);
+   double tp2 = isBuy ? price + 250 * SymbolInfoDouble(symbol, SYMBOL_POINT) :
+                        price - 250 * SymbolInfoDouble(symbol, SYMBOL_POINT);
+
+   TransitionToSetupActive(symbol, tf,
+                           isBuy ? DIRECTION_BUY : DIRECTION_SELL,
+                           cond, price, sl, tp1, tp2, 1.0);
+}
+
+void CAlertSystem::SendPatternAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                    string patternName, string details)
+{
+   // Envoyer comme info (pas de changement d'état)
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_LOW;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.title = "📊 PATTERN";
+   alert.body = "Pattern: " + patternName + "\n" + details;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+}
+
+void CAlertSystem::SendSMCAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                string smcType, string details)
+{
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_MEDIUM;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.title = "💰 SMART MONEY";
+   alert.body = "SMC: " + smcType + "\n" + details;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+}
+
+void CAlertSystem::SendDivergenceAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                       string divType, string details)
+{
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_MEDIUM;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.title = "📈 DIVERGENCE";
+   alert.body = "Divergence: " + divType + "\n" + details;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+}
+
+void CAlertSystem::SendMTFAlert(string symbol, string alignment, string details)
+{
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_HIGH;
+   alert.symbol = symbol;
+   alert.title = "🎯 MTF ALIGNÉ";
+   alert.body = "Alignement: " + alignment + "\n" + details;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+}
+
+void CAlertSystem::SendVolumeAlert(string symbol, ENUM_TIMEFRAMES tf,
+                                   string volumeState, string details)
+{
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_LOW;
+   alert.symbol = symbol;
+   alert.timeframe = tf;
+   alert.title = "📊 VOLUME";
+   alert.body = "Volume: " + volumeState + "\n" + details;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+}
+
+void CAlertSystem::SendRiskAlert(string symbol, string message)
+{
+   SAlertData alert;
+   alert.Reset();
+   alert.type = ALERT_INFO;
+   alert.priority = PRIORITY_CRITICAL;
+   alert.symbol = symbol;
+   alert.title = "⚠️ RISQUE";
+   alert.body = message;
+   alert.time = TimeCurrent();
+
+   DoSendAlert(alert);
+}
+
 //+------------------------------------------------------------------+

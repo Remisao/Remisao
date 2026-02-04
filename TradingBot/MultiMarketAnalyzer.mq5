@@ -1,17 +1,20 @@
 //+------------------------------------------------------------------+
-//|                                        MultiMarketAnalyzer.mq5  |
-//|                     BOT D'ANALYSE TRADING MULTI-MARCHÉS         |
-//|                          Forex & Crypto                         |
-//|                                                                 |
-//|  MARCHÉS: EURUSD, XAUUSD, BTCUSDT, ETHUSDT                      |
-//|  TIMEFRAMES: Daily (Direction), H4 (Structure), H1/M15 (Entrée) |
+//|                                        MultiMarketAnalyzer.mq5   |
+//|                    BOT ANALYSTE TRADING MULTI-MARCHÉS            |
+//|                          Forex & Crypto                          |
+//|                                                                  |
+//|  ⚠️ CE BOT NE TRADE PAS - ANALYSE UNIQUEMENT                     |
+//|  ⚠️ CE BOT NE SPAM PAS - ALERTES DISCIPLINÉES                    |
+//|                                                                  |
+//|  MARCHÉS: EURUSD, XAUUSD, BTCUSDT, ETHUSDT                       |
+//|  TIMEFRAMES: Daily (Biais), H4 (Zones), H1/M15 (Timing)          |
 //+------------------------------------------------------------------+
-#property copyright "Trading Bot Multi-Marchés"
+#property copyright "Trading Bot Analyste"
 #property link      ""
-#property version   "1.00"
-#property description "Bot d'analyse de trading multi-marchés (Forex & Crypto)"
-#property description "Détecte UNIQUEMENT des setups à haute probabilité"
-#property description "et envoie des alertes"
+#property version   "2.00"
+#property description "Bot d'analyse - NE TRADE PAS"
+#property description "Machine à états: NEUTRAL → PRE_SIGNAL → SETUP → EXIT"
+#property description "Alertes disciplinées et hiérarchisées"
 #property strict
 
 //+------------------------------------------------------------------+
@@ -44,14 +47,15 @@ input bool      InpAnalyzeETHUSDT   = true;       // Analyser ETHUSDT
 input group "═══════ RISK MANAGEMENT ═══════"
 input double    InpRiskPercent      = 1.0;        // Risque par trade (%)
 input double    InpMaxDailyDD       = 5.0;        // Drawdown max journalier (%)
-input int       InpMaxPositions     = 5;          // Positions max simultanées
 
 input group "═══════ ALERTES ═══════"
 input bool      InpEnablePush       = true;       // Notifications Push
 input bool      InpEnableEmail      = false;      // Notifications Email
 input bool      InpEnableSound      = true;       // Alertes sonores
 input bool      InpEnablePopup      = true;       // Popups MT5
-input int       InpAlertInterval    = 60;         // Intervalle min entre alertes (sec)
+input int       InpMinAlertInterval = 0;          // Intervalle min alertes (0=immédiat)
+input int       InpPreSignalCooldown= 0;          // Cooldown PRE_SIGNAL (0=immédiat)
+input int       InpSetupCooldown    = 0;          // Cooldown SETUP (0=immédiat)
 
 input group "═══════ TELEGRAM (Optionnel) ═══════"
 input bool      InpEnableTelegram   = false;      // Activer Telegram
@@ -61,7 +65,9 @@ input string    InpTelegramChatId   = "";         // Chat ID Telegram
 input group "═══════ PARAMÈTRES ANALYSE ═══════"
 input int       InpLookback         = 100;        // Barres à analyser
 input double    InpSRTolerance      = 10.0;       // Tolérance S/R (pips)
-input int       InpMinConditions    = 4;          // Conditions min pour alerte (sur 5)
+input int       InpMinConditions    = 4;          // Conditions min SETUP (sur 5)
+input int       InpMinPreSignal     = 3;          // Conditions min PRE_SIGNAL (sur 5)
+input double    InpMinVolumeRatio   = 150.0;      // Volume min pour SETUP (%)
 
 //+------------------------------------------------------------------+
 //| Variables globales                                                |
@@ -89,7 +95,9 @@ CTradeManagement    g_trade[];
 CAlertSystem        g_alerts;
 
 // État
-datetime g_lastBarTime[];
+datetime g_lastBarTime[];        // Dernière barre analysée par symbole
+datetime g_lastH4BarTime[];      // Dernière barre H4
+datetime g_lastDailyBarTime[];   // Dernière barre Daily
 bool     g_isInitialized = false;
 
 //+------------------------------------------------------------------+
@@ -98,8 +106,9 @@ bool     g_isInitialized = false;
 int OnInit()
 {
    Print("═══════════════════════════════════════════════════════════");
-   Print("     BOT D'ANALYSE TRADING MULTI-MARCHÉS");
-   Print("     Forex & Crypto - Haute Probabilité");
+   Print("     BOT ANALYSTE TRADING MULTI-MARCHÉS v2.0");
+   Print("     ⚠️ NE TRADE PAS - ANALYSE UNIQUEMENT");
+   Print("     Machine à états: NEUTRAL → PRE_SIGNAL → SETUP → EXIT");
    Print("═══════════════════════════════════════════════════════════");
 
    // Construire la liste des symboles
@@ -127,9 +136,9 @@ int OnInit()
 
    // Configurer le Risk Management
    g_risk.Init();
-   g_risk.SetRiskParameters(InpRiskPercent, InpMaxDailyDD, InpMaxPositions);
+   g_risk.SetRiskParameters(InpRiskPercent, InpMaxDailyDD, 5);
 
-   // Configurer le système d'alertes
+   // Configurer le système d'alertes avec machine à états
    ConfigureAlertSystem();
 
    Print("═══════════════════════════════════════════════════════════");
@@ -138,13 +147,16 @@ int OnInit()
 
    for(int i = 0; i < g_symbolCount; i++)
    {
-      Print("  ✓ ", g_symbols[i]);
+      Print("  ✓ ", g_symbols[i], " - État: NEUTRAL");
+
+      // Envoyer notification de démarrage pour chaque paire
+      g_alerts.SendStartupAlert(g_symbols[i], PERIOD_H4);
    }
 
    g_isInitialized = true;
 
    // Timer pour analyse périodique
-   EventSetTimer(1); // Chaque seconde
+   EventSetTimer(1);
 
    return INIT_SUCCEEDED;
 }
@@ -155,7 +167,8 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    EventKillTimer();
-   Print("Bot d'analyse arrêté. Raison: ", reason);
+   g_alerts.Deinit();
+   Print("Bot analyste arrêté. Raison: ", reason);
 }
 
 //+------------------------------------------------------------------+
@@ -209,10 +222,14 @@ bool InitializeArrays()
    ArrayResize(g_smc, g_symbolCount);
    ArrayResize(g_trade, g_symbolCount);
    ArrayResize(g_lastBarTime, g_symbolCount);
+   ArrayResize(g_lastH4BarTime, g_symbolCount);
+   ArrayResize(g_lastDailyBarTime, g_symbolCount);
 
    for(int i = 0; i < g_symbolCount; i++)
    {
       g_lastBarTime[i] = 0;
+      g_lastH4BarTime[i] = 0;
+      g_lastDailyBarTime[i] = 0;
    }
 
    return true;
@@ -227,43 +244,43 @@ bool InitializeAnalyzers()
    {
       string symbol = g_symbols[i];
 
-      // Chapitre 1 - Bougies
-      g_candle[i].Init(symbol, PERIOD_H1);
+      // Bougies (M15 pour timing)
+      g_candle[i].Init(symbol, PERIOD_M15);
 
-      // Chapitre 2 - S/R
+      // S/R (H4 pour zones)
       g_sr[i].Init(symbol, PERIOD_H4);
       g_sr[i].SetParameters(InpLookback, InpSRTolerance, 20);
 
-      // Chapitre 3 - Structure
+      // Structure (H4 pour contexte)
       g_structure[i].Init(symbol, PERIOD_H4);
       g_structure[i].SetParameters(InpLookback, 3);
 
-      // Chapitre 4 - Volume
+      // Volume (H1)
       g_volume[i].Init(symbol, PERIOD_H1);
 
-      // Chapitre 5 - Patterns
+      // Patterns (H4)
       g_patterns[i].Init(symbol, PERIOD_H4);
       g_patterns[i].SetParameters(50, 1.0);
 
-      // Chapitre 6 - Fibonacci
+      // Fibonacci (H4)
       g_fib[i].Init(symbol, PERIOD_H4);
       g_fib[i].SetLookback(InpLookback);
 
-      // Chapitre 7 - EMAs
+      // EMAs (H1)
       if(!g_ema[i].Init(symbol, PERIOD_H1))
       {
          Print("ERREUR: Échec init EMAs pour ", symbol);
          return false;
       }
 
-      // Chapitre 8 - RSI/MACD
+      // RSI/MACD (H1)
       if(!g_indicators[i].Init(symbol, PERIOD_H1))
       {
          Print("ERREUR: Échec init Indicateurs pour ", symbol);
          return false;
       }
 
-      // Chapitre 9 - Divergences
+      // Divergences (H1)
       if(!g_divergences[i].Init(symbol, PERIOD_H1))
       {
          Print("ERREUR: Échec init Divergences pour ", symbol);
@@ -271,21 +288,21 @@ bool InitializeAnalyzers()
       }
       g_divergences[i].SetAnalyzers(&g_candle[i], &g_structure[i]);
 
-      // Chapitre 11 - Trade Management
+      // Trade Management
       g_trade[i].Init(symbol, PERIOD_H1);
       g_trade[i].SetBreakevenMode(BE_AT_1R, 1.0);
       g_trade[i].SetTPDistribution(50.0, 30.0, 20.0);
 
-      // Chapitre 12 - MTF
+      // MTF
       if(!g_mtf[i].Init(symbol))
       {
          Print("ERREUR: Échec init MTF pour ", symbol);
          return false;
       }
 
-      // Chapitre 13 - Smart Money
+      // Smart Money (H4)
       g_smc[i].Init(symbol, PERIOD_H4);
-      g_smc[i].SetParameters(InpLookback, 0.1);
+      g_smc[i].SetParameters(InpLookback, OB_MODE_WICK, 0.3, 0.05, 5.0);
    }
 
    return true;
@@ -296,12 +313,15 @@ bool InitializeAnalyzers()
 //+------------------------------------------------------------------+
 void ConfigureAlertSystem()
 {
+   g_alerts.Init();
    g_alerts.EnablePush(InpEnablePush);
    g_alerts.EnableEmail(InpEnableEmail);
    g_alerts.EnableSound(InpEnableSound);
    g_alerts.EnablePopup(InpEnablePopup);
    g_alerts.EnableTelegram(InpEnableTelegram, InpTelegramToken, InpTelegramChatId);
-   g_alerts.SetMinInterval(InpAlertInterval);
+   g_alerts.SetMinInterval(InpMinAlertInterval);
+   g_alerts.SetPreSignalCooldown(InpPreSignalCooldown);
+   g_alerts.SetSetupCooldown(InpSetupCooldown);
 }
 
 //+------------------------------------------------------------------+
@@ -311,11 +331,12 @@ void OnTick()
 {
    if(!g_isInitialized) return;
 
-   // Analyser chaque symbole sur nouvelle bougie
+   // Analyser chaque symbole sur nouvelle bougie M15
    for(int i = 0; i < g_symbolCount; i++)
    {
       datetime currentBarTime = iTime(g_symbols[i], PERIOD_M15, 0);
 
+      // Nouvelle bougie M15 = analyse complète
       if(currentBarTime != g_lastBarTime[i])
       {
          g_lastBarTime[i] = currentBarTime;
@@ -329,276 +350,622 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
-   // Mise à jour périodique si nécessaire
+   // Mise à jour de l'affichage
+   DisplayStatus();
 }
 
 //+------------------------------------------------------------------+
-//| Analyser un symbole                                               |
+//| Analyser un symbole - MACHINE À ÉTATS                             |
 //+------------------------------------------------------------------+
 void AnalyzeSymbol(int index)
 {
    string symbol = g_symbols[index];
 
-   // Vérifier les corrélations (Chapitre 10)
-   if(g_risk.HasCorrelatedPosition(symbol))
+   // Obtenir l'état actuel du marché
+   ENUM_BOT_STATE currentState = g_alerts.GetMarketState(symbol);
+
+   //=================================================================
+   // ÉTAPE 1: Mise à jour des analyseurs (obligatoire à chaque tick)
+   //=================================================================
+   g_structure[index].Update();
+   g_smc[index].Update();
+   g_ema[index].Update();
+   g_divergences[index].Update();
+   g_volume[index].Analyze(1);
+
+   //=================================================================
+   // ÉTAPE 2: Vérifier les conditions de SORTIE (priorité max)
+   //=================================================================
+   if(currentState == STATE_SETUP_ACTIVE)
    {
-      // Ne pas analyser si position corrélée ouverte
-      return;
+      if(CheckExitConditions(index))
+      {
+         return; // Exit émis, pas besoin de continuer
+      }
+
+      // Vérifier si mise à jour nécessaire (MJ_SETUP)
+      CheckSetupUpdate(index);
+      return; // Ne pas chercher de nouveau setup si un est déjà actif
    }
 
-   // ══════════════════════════════════════════════════════════════
-   // CHAPITRE 12: ALIGNEMENT MTF OBLIGATOIRE
-   // Daily = Direction, H4 = Zone & structure, H1/M15 = Entrée
-   // ══════════════════════════════════════════════════════════════
+   //=================================================================
+   // ÉTAPE 3: Alignement MTF OBLIGATOIRE (Daily/H4/H1)
+   //=================================================================
    SMTFAnalysis mtf = g_mtf[index].Analyze();
 
    if(!mtf.isValidSetup)
    {
-      // RÈGLE: Si pas aligné → AUCUNE ALERTE
+      // RÈGLE: Pas d'alignement = Pas d'alerte
+      // Mais on peut revenir à NEUTRAL si on était en PRE_SIGNAL
+      if(currentState == STATE_PRE_SIGNAL)
+      {
+         // Si MTF n'est plus aligné, revenir à NEUTRAL
+         g_alerts.ResetToNeutral(symbol);
+      }
       return;
    }
 
-   // Déterminer la direction basée sur le MTF
    bool lookingForBuy = (mtf.direction == "BUY");
 
-   // ══════════════════════════════════════════════════════════════
-   // CHECKLIST FINALE - Validation des 5 conditions
-   // ══════════════════════════════════════════════════════════════
-   bool contextOK = false;
-   bool confluenceOK = false;
-   bool candleSignalOK = false;
-   bool volumeOK = false;
-   bool structureOK = false;
+   //=================================================================
+   // ÉTAPE 4: Évaluer les conditions PRE_SIGNAL (3/5)
+   //=================================================================
+   SPreSignalConditions preConditions;
+   preConditions.Reset();
+   EvaluatePreSignalConditions(index, lookingForBuy, preConditions);
 
-   // 1. CONTEXTE OK (MTF aligné + Structure)
-   g_structure[index].Analyze();
-   ENUM_MARKET_STRUCTURE structure = g_structure[index].GetStructure();
+   //=================================================================
+   // ÉTAPE 5: Évaluer les conditions SETUP (4/5)
+   //=================================================================
+   SSetupConditions setupConditions;
+   setupConditions.Reset();
+   EvaluateSetupConditions(index, lookingForBuy, mtf, setupConditions);
 
-   if(lookingForBuy)
-      contextOK = (structure == STRUCTURE_BULLISH || structure == STRUCTURE_RANGING);
-   else
-      contextOK = (structure == STRUCTURE_BEARISH || structure == STRUCTURE_RANGING);
+   //=================================================================
+   // ÉTAPE 6: Logique de transition d'état
+   //=================================================================
 
-   // 2. ZONE DE CONFLUENCE OK (Fib + S/R + SMC)
-   g_sr[index].DetectLevels();
-   g_fib[index].Analyze();
-   g_smc[index].AnalyzeAll();
+   // Si conditions SETUP validées (4/5) → SETUP_SIGNAL
+   if(g_alerts.ValidateSetupConditions(setupConditions))
+   {
+      // Calculer les niveaux
+      double entry, sl, tp1, tp2, riskPct;
+      CalculateTradeLevels(index, lookingForBuy, entry, sl, tp1, tp2, riskPct);
 
-   double currentPrice = SymbolInfoDouble(symbol, SYMBOL_BID);
+      g_alerts.TransitionToSetupActive(
+         symbol,
+         PERIOD_H1,
+         lookingForBuy ? DIRECTION_BUY : DIRECTION_SELL,
+         setupConditions,
+         entry, sl, tp1, tp2, riskPct
+      );
+   }
+   // Sinon si conditions PRE_SIGNAL validées (3/5) → PRE_SIGNAL
+   else if(g_alerts.ValidatePreSignalConditions(preConditions))
+   {
+      g_alerts.TransitionToPreSignal(
+         symbol,
+         PERIOD_H1,
+         lookingForBuy ? DIRECTION_BUY : DIRECTION_SELL,
+         preConditions
+      );
+   }
+}
 
-   // Confluence Fibonacci + S/R
-   double srLevel = 0;
-   bool atSR = false;
-   if(lookingForBuy)
-      atSR = g_sr[index].IsPriceAtSupport(currentPrice, srLevel);
-   else
-      atSR = g_sr[index].IsPriceAtResistance(currentPrice, srLevel);
+//+------------------------------------------------------------------+
+//| Évaluer les conditions PRE_SIGNAL (3/5 minimum)                   |
+//| 1. Compression détectée                                           |
+//| 2. Accumulation/Distribution                                      |
+//| 3. Proche zone majeure (SR/OB/FVG/Fibo)                          |
+//| 4. Divergence NON confirmée                                       |
+//| 5. Confluence EMA (prix proche EMA 50/200)                        |
+//+------------------------------------------------------------------+
+void EvaluatePreSignalConditions(int index, bool lookingForBuy, SPreSignalConditions &cond)
+{
+   string symbol = g_symbols[index];
+   double price = SymbolInfoDouble(symbol, SYMBOL_BID);
 
-   bool inGoldenZone = g_fib[index].IsPriceInGoldenZone(currentPrice);
-   bool smcConfluence = g_smc[index].HasSMCConfluence(currentPrice, lookingForBuy);
+   // 1. Compression détectée (ATR en baisse, Bollinger serrées)
+   cond.hasCompression = DetectCompression(index);
 
-   confluenceOK = (atSR || inGoldenZone || smcConfluence);
-
-   // 3. SIGNAL BOUGIE OK (Chapitre 1)
-   if(lookingForBuy)
-      candleSignalOK = g_candle[index].HasBullishConfirmation(1);
-   else
-      candleSignalOK = g_candle[index].HasBearishConfirmation(1);
-
-   // 4. VOLUME OK (Chapitre 4)
+   // 2. Accumulation/Distribution
    SVolumeData volData = g_volume[index].Analyze(1);
-   volumeOK = volData.isValidBreakout || volData.state == VOLUME_HIGH || volData.state == VOLUME_VERY_HIGH;
+   cond.hasAccumulation = volData.isAccumulation;
 
-   // 5. STRUCTURE OK (BOS/CHoCH confirme)
-   bool isBullishBOS;
-   if(lookingForBuy)
-      structureOK = g_smc[index].IsBOS(1, isBullishBOS) && isBullishBOS;
-   else
-      structureOK = g_smc[index].IsBOS(1, isBullishBOS) && !isBullishBOS;
+   // 3. Proche zone majeure
+   cond.nearMajorZone = IsNearMajorZone(index, price, lookingForBuy);
 
-   // Si pas de BOS, vérifier CHoCH
-   if(!structureOK)
-   {
-      bool isBullishCHoCH;
-      if(lookingForBuy)
-         structureOK = g_smc[index].IsCHoCH(1, isBullishCHoCH) && isBullishCHoCH;
-      else
-         structureOK = g_smc[index].IsCHoCH(1, isBullishCHoCH) && !isBullishCHoCH;
-   }
-
-   // ══════════════════════════════════════════════════════════════
-   // VALIDATION CHECKLIST FINALE
-   // RÈGLE: Minimum 4 conditions sur 5 validées
-   // ══════════════════════════════════════════════════════════════
-   int validatedCount;
-   bool isValidSetup = g_alerts.ValidateChecklist(
-      contextOK,
-      confluenceOK,
-      candleSignalOK,
-      volumeOK,
-      structureOK,
-      validatedCount
-   );
-
-   if(isValidSetup && validatedCount >= InpMinConditions)
-   {
-      // GÉNÉRER L'ALERTE
-      GenerateSetupAlert(index, lookingForBuy, validatedCount,
-                         contextOK, confluenceOK, candleSignalOK, volumeOK, structureOK);
-   }
-
-   // Vérifier aussi les divergences confirmées
-   CheckDivergences(index);
-
-   // Vérifier les patterns
-   CheckPatterns(index);
-}
-
-//+------------------------------------------------------------------+
-//| Générer une alerte de setup                                       |
-//+------------------------------------------------------------------+
-void GenerateSetupAlert(int index, bool isBuy, int conditions,
-                        bool contextOK, bool confluenceOK,
-                        bool candleOK, bool volumeOK, bool structureOK)
-{
-   string symbol = g_symbols[index];
-   double currentPrice = SymbolInfoDouble(symbol, SYMBOL_BID);
-
-   // Construire les détails
-   string details = "";
-   details += "───── CHECKLIST ─────\n";
-   details += "Contexte MTF: " + (contextOK ? "✅" : "❌") + "\n";
-   details += "Zone Confluence: " + (confluenceOK ? "✅" : "❌") + "\n";
-   details += "Signal Bougie: " + (candleOK ? "✅" : "❌") + "\n";
-   details += "Volume: " + (volumeOK ? "✅" : "❌") + "\n";
-   details += "Structure SMC: " + (structureOK ? "✅" : "❌") + "\n";
-   details += "─────────────────────\n";
-
-   // Infos SMC
-   g_smc[index].AnalyzeAll();
-   if(isBuy)
-   {
-      SOrderBlock ob = g_smc[index].GetNearestBullishOB(currentPrice);
-      if(ob.isValid)
-         details += "OB Zone: " + DoubleToString(ob.low, 5) + " - " + DoubleToString(ob.high, 5) + "\n";
-
-      SFairValueGap fvg = g_smc[index].GetNearestBullishFVG(currentPrice);
-      if(fvg.isValid)
-         details += "FVG Zone: " + DoubleToString(fvg.low, 5) + " - " + DoubleToString(fvg.high, 5) + "\n";
-   }
-   else
-   {
-      SOrderBlock ob = g_smc[index].GetNearestBearishOB(currentPrice);
-      if(ob.isValid)
-         details += "OB Zone: " + DoubleToString(ob.low, 5) + " - " + DoubleToString(ob.high, 5) + "\n";
-
-      SFairValueGap fvg = g_smc[index].GetNearestBearishFVG(currentPrice);
-      if(fvg.isValid)
-         details += "FVG Zone: " + DoubleToString(fvg.low, 5) + " - " + DoubleToString(fvg.high, 5) + "\n";
-   }
-
-   // Fibonacci
-   SFibLevels fibLevels = g_fib[index].GetFibLevels();
-   details += "─────────────────────\n";
-   details += "Golden Zone: " + DoubleToString(fibLevels.goldenZoneLow, 5) +
-              " - " + DoubleToString(fibLevels.goldenZoneHigh, 5) + "\n";
-   details += "TP1 (127.2%): " + DoubleToString(g_fib[index].GetTP1(), 5) + "\n";
-   details += "TP2 (161.8%): " + DoubleToString(g_fib[index].GetTP2(), 5) + "\n";
-
-   // SL/TP calculés
-   double swingLow = g_structure[index].GetLastSwingLow();
-   double swingHigh = g_structure[index].GetLastSwingHigh();
-
-   double sl = g_trade[index].CalculateStopLoss(isBuy, swingLow, swingHigh);
-   STradeLevels levels = g_trade[index].CalculateTradeLevels(currentPrice, sl, isBuy);
-
-   details += "─────────────────────\n";
-   details += "SL Technique: " + DoubleToString(sl, 5) + "\n";
-   details += "Multi-TP:\n";
-   details += "  TP1: " + DoubleToString(levels.tp1, 5) + " (50%)\n";
-   details += "  TP2: " + DoubleToString(levels.tp2, 5) + " (30%)\n";
-   details += "  TP3: " + DoubleToString(levels.tp3, 5) + " (20%)\n";
-   details += "BE à: " + DoubleToString(levels.breakeven, 5) + " (R:R 1:1)\n";
-
-   // Position sizing
-   double slPips = MathAbs(currentPrice - sl) / SymbolInfoDouble(symbol, SYMBOL_POINT) / 10;
-   SRiskCalculation risk = g_risk.GetRiskCalculation(symbol, slPips);
-   details += "─────────────────────\n";
-   details += "Risque: " + DoubleToString(risk.riskPercent, 1) + "% = " +
-              DoubleToString(risk.riskAmount, 2) + "\n";
-   details += "Position: " + DoubleToString(risk.positionSize, 2) + " lots\n";
-
-   // Message principal
-   string message = "SETUP " + (isBuy ? "ACHAT" : "VENTE") + " HAUTE PROBABILITÉ\n";
-   message += "Prix: " + DoubleToString(currentPrice, 5);
-
-   // Envoyer l'alerte
-   g_alerts.SendSetupAlert(symbol, PERIOD_H1, isBuy, message, details, conditions);
-}
-
-//+------------------------------------------------------------------+
-//| Vérifier les divergences                                          |
-//+------------------------------------------------------------------+
-void CheckDivergences(int index)
-{
-   string symbol = g_symbols[index];
-
+   // 4. Divergence NON confirmée (en formation)
    SDivergence div;
    if(g_divergences[index].HasDivergence(div))
    {
-      // RÈGLE: PAS d'alerte sans confirmation
-      if(div.isConfirmed)
-      {
-         string alert = g_divergences[index].GetDivergenceAlert(div);
-         if(alert != "")
-         {
-            g_alerts.SendDivergenceAlert(symbol, PERIOD_H1,
-               g_divergences[index].DivergenceTypeToString(div.type), alert);
-         }
-      }
+      // Divergence présente mais PAS encore confirmée
+      cond.hasDivergence = !div.isConfirmed;
+   }
+
+   // 5. Confluence EMA (prix proche EMA 50 ou 200)
+   cond.hasEMAConfluence = IsNearEMA(index, price);
+
+   cond.Calculate();
+}
+
+//+------------------------------------------------------------------+
+//| Évaluer les conditions SETUP (4/5 minimum)                        |
+//| 1. Contexte MTF aligné                                            |
+//| 2. Zone de confluence                                             |
+//| 3. Signal bougie (rejet ≥50% ou impulsion ≥70%)                  |
+//| 4. Volume ≥ 150%                                                  |
+//| 5. Structure SMC (BOS/CHoCH)                                      |
+//+------------------------------------------------------------------+
+void EvaluateSetupConditions(int index, bool lookingForBuy, SMTFAnalysis &mtf, SSetupConditions &cond)
+{
+   string symbol = g_symbols[index];
+   double price = SymbolInfoDouble(symbol, SYMBOL_BID);
+
+   // 1. Contexte MTF aligné
+   cond.contextOK = mtf.isValidSetup;
+
+   // 2. Zone de confluence (SR + Fibo + SMC)
+   cond.confluenceOK = HasConfluenceZone(index, price, lookingForBuy);
+
+   // 3. Signal bougie (rejet mèche ≥50% OU impulsion corps ≥70%)
+   cond.candleSignalOK = HasValidCandleSignal(index, lookingForBuy);
+
+   // 4. Volume ≥ 150%
+   SVolumeData volData = g_volume[index].Analyze(1);
+   cond.volumeOK = (volData.volumeRatio >= InpMinVolumeRatio);
+
+   // 5. Structure SMC (BOS ou CHoCH aligné)
+   cond.structureOK = HasValidStructure(index, lookingForBuy);
+
+   cond.Calculate();
+}
+
+//+------------------------------------------------------------------+
+//| Détecter la compression (range qui se resserre)                   |
+//+------------------------------------------------------------------+
+bool DetectCompression(int index)
+{
+   string symbol = g_symbols[index];
+
+   // Vérifier que l'ATR diminue
+   double atr5 = 0, atr20 = 0;
+
+   for(int i = 1; i <= 5; i++)
+   {
+      double h = iHigh(symbol, PERIOD_H1, i);
+      double l = iLow(symbol, PERIOD_H1, i);
+      atr5 += (h - l);
+   }
+   atr5 /= 5;
+
+   for(int i = 1; i <= 20; i++)
+   {
+      double h = iHigh(symbol, PERIOD_H1, i);
+      double l = iLow(symbol, PERIOD_H1, i);
+      atr20 += (h - l);
+   }
+   atr20 /= 20;
+
+   // ATR récent < 70% de l'ATR moyen = compression
+   return (atr5 < atr20 * 0.7);
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier si proche d'une zone majeure                             |
+//+------------------------------------------------------------------+
+bool IsNearMajorZone(int index, double price, bool lookingForBuy)
+{
+   string symbol = g_symbols[index];
+
+   // Vérifier S/R
+   g_sr[index].DetectLevels();
+   double srLevel = 0;
+   if(lookingForBuy)
+   {
+      if(g_sr[index].IsPriceAtSupport(price, srLevel))
+         return true;
+   }
+   else
+   {
+      if(g_sr[index].IsPriceAtResistance(price, srLevel))
+         return true;
+   }
+
+   // Vérifier Fibonacci Golden Zone
+   g_fib[index].Analyze();
+   if(g_fib[index].IsPriceInGoldenZone(price))
+      return true;
+
+   // Vérifier OB/FVG
+   if(lookingForBuy)
+   {
+      if(g_smc[index].IsPriceInAnyBullishOB(price) ||
+         g_smc[index].IsPriceInAnyBullishFVG(price))
+         return true;
+   }
+   else
+   {
+      if(g_smc[index].IsPriceInAnyBearishOB(price) ||
+         g_smc[index].IsPriceInAnyBearishFVG(price))
+         return true;
+   }
+
+   // Vérifier proximité (dans les 1% de distance)
+   double distBullish = g_smc[index].GetDistanceToNearestBullishZone(price);
+   double distBearish = g_smc[index].GetDistanceToNearestBearishZone(price);
+
+   if(lookingForBuy && distBullish < price * 0.01)
+      return true;
+   if(!lookingForBuy && distBearish < price * 0.01)
+      return true;
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier si prix proche EMA 50/200                                |
+//+------------------------------------------------------------------+
+bool IsNearEMA(int index, double price)
+{
+   double ema50 = g_ema[index].GetEMA(50, 1);
+   double ema200 = g_ema[index].GetEMA(200, 1);
+
+   double tolerance = price * 0.005; // 0.5%
+
+   if(MathAbs(price - ema50) < tolerance)
+      return true;
+   if(MathAbs(price - ema200) < tolerance)
+      return true;
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier la confluence de zone                                    |
+//+------------------------------------------------------------------+
+bool HasConfluenceZone(int index, double price, bool lookingForBuy)
+{
+   int confluenceCount = 0;
+
+   // S/R
+   g_sr[index].DetectLevels();
+   double srLevel = 0;
+   if(lookingForBuy)
+   {
+      if(g_sr[index].IsPriceAtSupport(price, srLevel))
+         confluenceCount++;
+   }
+   else
+   {
+      if(g_sr[index].IsPriceAtResistance(price, srLevel))
+         confluenceCount++;
+   }
+
+   // Fibonacci
+   g_fib[index].Analyze();
+   if(g_fib[index].IsPriceInGoldenZone(price))
+      confluenceCount++;
+
+   // SMC (OB ou FVG)
+   if(g_smc[index].HasSMCConfluence(price, lookingForBuy))
+      confluenceCount++;
+
+   // EMA
+   if(IsNearEMA(index, price))
+      confluenceCount++;
+
+   // Au moins 2 confluences
+   return (confluenceCount >= 2);
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier signal bougie valide                                     |
+//| Rejet = mèche ≥ 50% du range                                      |
+//| Impulsion = corps ≥ 70% du range                                  |
+//+------------------------------------------------------------------+
+bool HasValidCandleSignal(int index, bool lookingForBuy)
+{
+   SCandleData candle = g_candle[index].AnalyzeCandle(1);
+
+   if(lookingForBuy)
+   {
+      // Rejet haussier (longue mèche basse) ou impulsion haussière
+      bool isRejection = (candle.lowerWickPct >= 50.0 && candle.isBullish);
+      bool isImpulse = (candle.bodyPct >= 70.0 && candle.isBullish);
+      return (isRejection || isImpulse);
+   }
+   else
+   {
+      // Rejet baissier (longue mèche haute) ou impulsion baissière
+      bool isRejection = (candle.upperWickPct >= 50.0 && !candle.isBullish);
+      bool isImpulse = (candle.bodyPct >= 70.0 && !candle.isBullish);
+      return (isRejection || isImpulse);
    }
 }
 
 //+------------------------------------------------------------------+
-//| Vérifier les patterns                                             |
+//| Vérifier structure SMC valide (BOS/CHoCH aligné)                  |
 //+------------------------------------------------------------------+
-void CheckPatterns(int index)
+bool HasValidStructure(int index, bool lookingForBuy)
+{
+   SStructureAnalysis structure = g_structure[index].GetAnalysis();
+
+   if(lookingForBuy)
+   {
+      // Structure bullish ou transition bullish (CHoCH)
+      if(structure.state == STRUCTURE_BULLISH)
+         return true;
+
+      // CHoCH bullish récent
+      if(structure.lastEvent.eventType == EVENT_CHOCH_BULLISH &&
+         structure.barsSinceEvent <= 5)
+         return true;
+
+      // BOS bullish récent
+      if(structure.lastEvent.eventType == EVENT_BOS_BULLISH &&
+         structure.barsSinceEvent <= 3)
+         return true;
+   }
+   else
+   {
+      // Structure bearish ou transition bearish
+      if(structure.state == STRUCTURE_BEARISH)
+         return true;
+
+      // CHoCH bearish récent
+      if(structure.lastEvent.eventType == EVENT_CHOCH_BEARISH &&
+         structure.barsSinceEvent <= 5)
+         return true;
+
+      // BOS bearish récent
+      if(structure.lastEvent.eventType == EVENT_BOS_BEARISH &&
+         structure.barsSinceEvent <= 3)
+         return true;
+   }
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Calculer les niveaux de trade (Entry, SL, TP1, TP2)               |
+//+------------------------------------------------------------------+
+void CalculateTradeLevels(int index, bool lookingForBuy,
+                          double &entry, double &sl, double &tp1, double &tp2, double &riskPct)
+{
+   string symbol = g_symbols[index];
+   double price = SymbolInfoDouble(symbol, SYMBOL_BID);
+   double point = SymbolInfoDouble(symbol, SYMBOL_POINT);
+
+   // Entry = prix actuel ou zone OB/FVG
+   entry = price;
+
+   // Chercher meilleure entrée dans zone OB
+   if(lookingForBuy)
+   {
+      SOrderBlock ob = g_smc[index].GetNearestBullishOB(price);
+      if(ob.isValid && ob.high > price * 0.99) // Zone proche
+         entry = ob.midPoint;
+   }
+   else
+   {
+      SOrderBlock ob = g_smc[index].GetNearestBearishOB(price);
+      if(ob.isValid && ob.low < price * 1.01)
+         entry = ob.midPoint;
+   }
+
+   // SL basé sur structure (swing low/high)
+   SStructureAnalysis structure = g_structure[index].GetAnalysis();
+
+   if(lookingForBuy)
+   {
+      // SL sous le dernier swing low
+      sl = structure.keyLowLevel - 10 * point;
+   }
+   else
+   {
+      // SL au-dessus du dernier swing high
+      sl = structure.keyHighLevel + 10 * point;
+   }
+
+   // Calculer distance SL
+   double slDistance = MathAbs(entry - sl);
+
+   // TP basé sur Fibonacci extensions
+   g_fib[index].Analyze();
+   SFibLevels fibLevels = g_fib[index].GetFibLevels();
+
+   if(lookingForBuy)
+   {
+      tp1 = entry + slDistance * 1.5;  // 1.5R
+      tp2 = entry + slDistance * 2.5;  // 2.5R
+
+      // Si Fibo disponible, utiliser extensions
+      if(fibLevels.isValid)
+      {
+         tp1 = g_fib[index].GetTP1();
+         tp2 = g_fib[index].GetTP2();
+      }
+   }
+   else
+   {
+      tp1 = entry - slDistance * 1.5;
+      tp2 = entry - slDistance * 2.5;
+
+      if(fibLevels.isValid)
+      {
+         tp1 = g_fib[index].GetTP1();
+         tp2 = g_fib[index].GetTP2();
+      }
+   }
+
+   // Risque
+   riskPct = InpRiskPercent;
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier conditions de SORTIE                                     |
+//| Priorité maximale - annule tout le reste                          |
+//+------------------------------------------------------------------+
+bool CheckExitConditions(int index)
 {
    string symbol = g_symbols[index];
 
-   g_patterns[index].DetectAllPatterns();
+   // Obtenir le setup actif
+   SActiveSetup setup = g_alerts.GetActiveSetup(symbol);
+   if(!setup.isValid) return false;
 
-   for(int i = 0; i < g_patterns[index].GetPatternCount(); i++)
+   bool lookingForBuy = (setup.direction == DIRECTION_BUY);
+
+   SExitConditions exitCond;
+   exitCond.Reset();
+
+   // 1. CHoCH contre la position
+   SStructureAnalysis structure = g_structure[index].GetAnalysis();
+   if(lookingForBuy)
    {
-      SChartPattern pattern = g_patterns[index].GetPattern(i);
+      exitCond.hasChochAgainst = (structure.lastEvent.eventType == EVENT_CHOCH_BEARISH &&
+                                  structure.barsSinceEvent <= 3);
+   }
+   else
+   {
+      exitCond.hasChochAgainst = (structure.lastEvent.eventType == EVENT_CHOCH_BULLISH &&
+                                  structure.barsSinceEvent <= 3);
+   }
 
-      // RÈGLE: Double Top/Bottom - Alerte UNIQUEMENT à cassure neckline
-      if(pattern.type == PATTERN_DOUBLE_TOP || pattern.type == PATTERN_DOUBLE_BOTTOM)
+   // 2. BOS inverse sur HTF (H4)
+   if(lookingForBuy)
+   {
+      exitCond.hasBosInverse = (structure.lastEvent.eventType == EVENT_BOS_BEARISH &&
+                                structure.barsSinceEvent <= 2);
+   }
+   else
+   {
+      exitCond.hasBosInverse = (structure.lastEvent.eventType == EVENT_BOS_BULLISH &&
+                                structure.barsSinceEvent <= 2);
+   }
+
+   // 3. Divergence contraire confirmée
+   SDivergence div;
+   if(g_divergences[index].HasDivergence(div) && div.isConfirmed)
+   {
+      if(lookingForBuy && (div.type == DIV_REGULAR_BEARISH || div.type == DIV_HIDDEN_BEARISH))
+         exitCond.hasDivergenceConfirmed = true;
+      if(!lookingForBuy && (div.type == DIV_REGULAR_BULLISH || div.type == DIV_HIDDEN_BULLISH))
+         exitCond.hasDivergenceConfirmed = true;
+   }
+
+   // 4. Bougie opposée forte (corps > 70%)
+   SCandleData candle = g_candle[index].AnalyzeCandle(1);
+   if(lookingForBuy)
+   {
+      exitCond.hasStrongOppositeCandle = (!candle.isBullish && candle.bodyPct >= 70.0);
+   }
+   else
+   {
+      exitCond.hasStrongOppositeCandle = (candle.isBullish && candle.bodyPct >= 70.0);
+   }
+
+   // 5. Volume de retournement anormal
+   SVolumeData volData = g_volume[index].Analyze(1);
+   if(volData.volumeRatio >= 250.0) // Spike de volume
+   {
+      // Si volume spike avec bougie opposée
+      if((lookingForBuy && !candle.isBullish) ||
+         (!lookingForBuy && candle.isBullish))
       {
-         if(pattern.status == STATUS_NECKLINE_BREAK)
-         {
-            string alert = g_patterns[index].GetPatternAlert(pattern);
-            if(alert != "")
-            {
-               g_alerts.SendPatternAlert(symbol, PERIOD_H4,
-                  g_patterns[index].PatternTypeToString(pattern.type), alert);
-            }
-         }
+         exitCond.hasVolumeReversal = true;
       }
-      // RÈGLE: Patterns continuation - Alerte "Compression"
-      else if(pattern.type == PATTERN_TRIANGLE_ASCENDING ||
-              pattern.type == PATTERN_TRIANGLE_DESCENDING ||
-              pattern.type == PATTERN_TRIANGLE_SYMMETRIC ||
-              pattern.type == PATTERN_FLAG_BULLISH ||
-              pattern.type == PATTERN_FLAG_BEARISH)
-      {
-         string alert = g_patterns[index].GetPatternAlert(pattern);
-         if(alert != "")
-         {
-            g_alerts.SendPatternAlert(symbol, PERIOD_H4,
-               g_patterns[index].PatternTypeToString(pattern.type), alert);
-         }
-      }
+   }
+
+   // 6. Cassure EMA 50/200
+   double price = SymbolInfoDouble(symbol, SYMBOL_BID);
+   double ema50 = g_ema[index].GetEMA(50, 1);
+   double ema200 = g_ema[index].GetEMA(200, 1);
+
+   if(lookingForBuy)
+   {
+      // Cassure sous EMA 50 ou 200
+      exitCond.hasEMABreak = (price < ema50 && iClose(symbol, PERIOD_H1, 2) > ema50) ||
+                             (price < ema200 && iClose(symbol, PERIOD_H1, 2) > ema200);
+   }
+   else
+   {
+      // Cassure au-dessus EMA 50 ou 200
+      exitCond.hasEMABreak = (price > ema50 && iClose(symbol, PERIOD_H1, 2) < ema50) ||
+                             (price > ema200 && iClose(symbol, PERIOD_H1, 2) < ema200);
+   }
+
+   // 7. Désalignement MTF
+   SMTFAnalysis mtf = g_mtf[index].Analyze();
+   if(!mtf.isValidSetup)
+   {
+      exitCond.hasMTFMisalignment = true;
+   }
+   else if((lookingForBuy && mtf.direction == "SELL") ||
+           (!lookingForBuy && mtf.direction == "BUY"))
+   {
+      exitCond.hasMTFMisalignment = true;
+   }
+
+   // Déterminer la raison principale
+   exitCond.DetermineMainReason();
+
+   // Si au moins une condition de sortie
+   if(exitCond.HasAnyExitSignal())
+   {
+      g_alerts.TransitionToExit(symbol, exitCond);
+      return true;
+   }
+
+   return false;
+}
+
+//+------------------------------------------------------------------+
+//| Vérifier si mise à jour du setup nécessaire (MJ_SETUP)            |
+//+------------------------------------------------------------------+
+void CheckSetupUpdate(int index)
+{
+   string symbol = g_symbols[index];
+   SActiveSetup setup = g_alerts.GetActiveSetup(symbol);
+
+   if(!setup.isValid) return;
+
+   bool lookingForBuy = (setup.direction == DIRECTION_BUY);
+
+   // Calculer nouveaux niveaux
+   double newEntry, newSL, newTP1, newTP2, riskPct;
+   CalculateTradeLevels(index, lookingForBuy, newEntry, newSL, newTP1, newTP2, riskPct);
+
+   // Vérifier si changements significatifs (> 0.1%)
+   bool entryChanged = (MathAbs(newEntry - setup.entryPrice) / setup.entryPrice > 0.001);
+   bool slChanged = (MathAbs(newSL - setup.stopLoss) / setup.stopLoss > 0.001);
+   bool tp1Changed = (MathAbs(newTP1 - setup.tp1) / setup.tp1 > 0.001);
+   bool tp2Changed = (MathAbs(newTP2 - setup.tp2) / setup.tp2 > 0.001);
+
+   string contextChange = "";
+
+   // Vérifier si contexte amélioré
+   SSetupConditions cond;
+   SMTFAnalysis mtf = g_mtf[index].Analyze();
+   EvaluateSetupConditions(index, lookingForBuy, mtf, cond);
+
+   if(cond.validCount > setup.conditionsValidated)
+   {
+      contextChange = "Conditions améliorées: " + IntegerToString(cond.validCount) + "/5";
+   }
+
+   // Mise à jour si changement
+   if(entryChanged || slChanged || tp1Changed || tp2Changed || contextChange != "")
+   {
+      g_alerts.UpdateActiveSetup(
+         symbol,
+         entryChanged ? newEntry : 0,
+         slChanged ? newSL : 0,
+         tp1Changed ? newTP1 : 0,
+         tp2Changed ? newTP2 : 0,
+         contextChange
+      );
    }
 }
 
@@ -608,28 +975,46 @@ void CheckPatterns(int index)
 void DisplayStatus()
 {
    string status = "";
-   status += "═══════════════════════════════════════\n";
-   status += "   BOT ANALYSE MULTI-MARCHÉS ACTIF\n";
-   status += "═══════════════════════════════════════\n\n";
+   status += "═══════════════════════════════════════════════════\n";
+   status += "   BOT ANALYSTE v2.0 - MACHINE À ÉTATS\n";
+   status += "   ⚠️ NE TRADE PAS - ANALYSE UNIQUEMENT\n";
+   status += "═══════════════════════════════════════════════════\n\n";
 
    for(int i = 0; i < g_symbolCount; i++)
    {
       string symbol = g_symbols[i];
-      SMTFAnalysis mtf = g_mtf[i].Analyze();
+      ENUM_BOT_STATE state = g_alerts.GetMarketState(symbol);
 
       status += symbol + ": ";
-      if(mtf.isValidSetup)
-         status += "✅ " + mtf.direction;
-      else
-         status += "⏸ En attente";
+
+      switch(state)
+      {
+         case STATE_NEUTRAL:
+            status += "⚪ NEUTRAL";
+            break;
+         case STATE_PRE_SIGNAL:
+            status += "🟡 PRE_SIGNAL";
+            break;
+         case STATE_SETUP_ACTIVE:
+            {
+               SActiveSetup setup = g_alerts.GetActiveSetup(symbol);
+               string dir = (setup.direction == DIRECTION_BUY) ? "BUY" : "SELL";
+               status += "🚨 SETUP_ACTIVE [" + dir + "]";
+               status += "\n       Entry: " + DoubleToString(setup.entryPrice, 5);
+               status += " SL: " + DoubleToString(setup.stopLoss, 5);
+            }
+            break;
+         case STATE_EXIT_PRIORITY:
+            status += "🟢 EXIT_PRIORITY";
+            break;
+      }
       status += "\n";
    }
 
-   status += "\n───────────────────────────────────────\n";
+   status += "\n───────────────────────────────────────────────────\n";
    status += "Risque/Trade: " + DoubleToString(InpRiskPercent, 1) + "%\n";
-   status += "Positions ouvertes: " + IntegerToString(g_risk.GetOpenPositionsCount()) + "/" +
-             IntegerToString(InpMaxPositions) + "\n";
-   status += "───────────────────────────────────────\n";
+   status += "Volume min: " + DoubleToString(InpMinVolumeRatio, 0) + "%\n";
+   status += "───────────────────────────────────────────────────\n";
 
    Comment(status);
 }
