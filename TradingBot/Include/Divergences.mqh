@@ -76,7 +76,7 @@ enum ENUM_DIVERGENCE_QUALITY
 //+------------------------------------------------------------------+
 //| Structure d'un point Swing                                        |
 //+------------------------------------------------------------------+
-struct SSwingPoint
+struct SDivSwingPoint
 {
    int               bar;           // Index de la barre
    datetime          time;          // Timestamp
@@ -99,8 +99,8 @@ struct SDivergence
    ENUM_TIMEFRAMES          timeframe;         // Timeframe de détection
 
    // Points de la divergence
-   SSwingPoint              point1;            // Premier point (plus ancien)
-   SSwingPoint              point2;            // Deuxième point (plus récent)
+   SDivSwingPoint              point1;            // Premier point (plus ancien)
+   SDivSwingPoint              point2;            // Deuxième point (plus récent)
 
    // Mesures
    double                   priceDivergence;   // Écart de prix en %
@@ -184,12 +184,12 @@ private:
    // Détection des Swing Points (PRIORITÉ ABSOLUE)
    bool              IsSwingLow(int bar);
    bool              IsSwingHigh(int bar);
-   void              FindSwingLows(SSwingPoint &points[], int maxPoints);
-   void              FindSwingHighs(SSwingPoint &points[], int maxPoints);
-   bool              ValidateSwingPoint(SSwingPoint &point);
+   void              FindSwingLows(SDivSwingPoint &points[], int maxPoints);
+   void              FindSwingHighs(SDivSwingPoint &points[], int maxPoints);
+   bool              ValidateSwingPoint(SDivSwingPoint &point);
 
    // Calcul des divergences
-   bool              CalculateDivergence(SSwingPoint &p1, SSwingPoint &p2,
+   bool              CalculateDivergence(SDivSwingPoint &p1, SDivSwingPoint &p2,
                                          ENUM_DIVERGENCE_TYPE expectedType,
                                          ENUM_DIV_INDICATOR ind, SDivergence &div);
    ENUM_DIVERGENCE_QUALITY EvaluateQuality(SDivergence &div);
@@ -510,7 +510,7 @@ bool CDivergences::IsSwingHigh(int bar)
 //+------------------------------------------------------------------+
 //| Trouver tous les Swing Lows valides                               |
 //+------------------------------------------------------------------+
-void CDivergences::FindSwingLows(SSwingPoint &points[], int maxPoints)
+void CDivergences::FindSwingLows(SDivSwingPoint &points[], int maxPoints)
 {
    ArrayResize(points, 0);
 
@@ -524,7 +524,7 @@ void CDivergences::FindSwingLows(SSwingPoint &points[], int maxPoints)
    {
       if(IsSwingLow(bar))
       {
-         SSwingPoint point;
+         SDivSwingPoint point;
          point.bar = bar;
          point.time = iTime(m_symbol, m_timeframe, bar);
          point.price = iLow(m_symbol, m_timeframe, bar);
@@ -547,7 +547,7 @@ void CDivergences::FindSwingLows(SSwingPoint &points[], int maxPoints)
 //+------------------------------------------------------------------+
 //| Trouver tous les Swing Highs valides                              |
 //+------------------------------------------------------------------+
-void CDivergences::FindSwingHighs(SSwingPoint &points[], int maxPoints)
+void CDivergences::FindSwingHighs(SDivSwingPoint &points[], int maxPoints)
 {
    ArrayResize(points, 0);
 
@@ -561,7 +561,7 @@ void CDivergences::FindSwingHighs(SSwingPoint &points[], int maxPoints)
    {
       if(IsSwingHigh(bar))
       {
-         SSwingPoint point;
+         SDivSwingPoint point;
          point.bar = bar;
          point.time = iTime(m_symbol, m_timeframe, bar);
          point.price = iHigh(m_symbol, m_timeframe, bar);
@@ -584,7 +584,7 @@ void CDivergences::FindSwingHighs(SSwingPoint &points[], int maxPoints)
 //+------------------------------------------------------------------+
 //| Valider un point Swing                                            |
 //+------------------------------------------------------------------+
-bool CDivergences::ValidateSwingPoint(SSwingPoint &point)
+bool CDivergences::ValidateSwingPoint(SDivSwingPoint &point)
 {
    // Vérifier que les valeurs indicateurs sont valides
    if(point.rsiValue <= 0 || point.rsiValue >= 100)
@@ -597,7 +597,7 @@ bool CDivergences::ValidateSwingPoint(SSwingPoint &point)
 //+------------------------------------------------------------------+
 //| Calculer et valider une divergence                                |
 //+------------------------------------------------------------------+
-bool CDivergences::CalculateDivergence(SSwingPoint &p1, SSwingPoint &p2,
+bool CDivergences::CalculateDivergence(SDivSwingPoint &p1, SDivSwingPoint &p2,
                                         ENUM_DIVERGENCE_TYPE expectedType,
                                         ENUM_DIV_INDICATOR ind, SDivergence &div)
 {
@@ -942,7 +942,7 @@ bool CDivergences::FilterRetailTrap(SDivergence &div)
 //+------------------------------------------------------------------+
 bool CDivergences::DetectBullishRegular(SDivergence &div)
 {
-   SSwingPoint swingLows[];
+   SDivSwingPoint swingLows[];
    FindSwingLows(swingLows, 5);  // Chercher les 5 derniers swing lows
 
    if(ArraySize(swingLows) < 2) return false;
@@ -985,7 +985,7 @@ bool CDivergences::DetectBullishRegular(SDivergence &div)
 //+------------------------------------------------------------------+
 bool CDivergences::DetectBearishRegular(SDivergence &div)
 {
-   SSwingPoint swingHighs[];
+   SDivSwingPoint swingHighs[];
    FindSwingHighs(swingHighs, 5);
 
    if(ArraySize(swingHighs) < 2) return false;
@@ -1028,7 +1028,7 @@ bool CDivergences::DetectBearishRegular(SDivergence &div)
 //+------------------------------------------------------------------+
 bool CDivergences::DetectBullishHidden(SDivergence &div)
 {
-   SSwingPoint swingLows[];
+   SDivSwingPoint swingLows[];
    FindSwingLows(swingLows, 5);
 
    if(ArraySize(swingLows) < 2) return false;
@@ -1059,7 +1059,7 @@ bool CDivergences::DetectBullishHidden(SDivergence &div)
 //+------------------------------------------------------------------+
 bool CDivergences::DetectBearishHidden(SDivergence &div)
 {
-   SSwingPoint swingHighs[];
+   SDivSwingPoint swingHighs[];
    FindSwingHighs(swingHighs, 5);
 
    if(ArraySize(swingHighs) < 2) return false;

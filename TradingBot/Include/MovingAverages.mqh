@@ -79,13 +79,13 @@ enum ENUM_EMA_EVENT
 };
 
 //+------------------------------------------------------------------+
-//| Niveau d'alerte                                                   |
+//| Niveau d'alerte EMA                                               |
 //+------------------------------------------------------------------+
 enum ENUM_EMA_ALERT_LEVEL
 {
-   ALERT_INFO = 0,         // Information (touche EMA, compression)
-   ALERT_SETUP,            // Setup valide (alignement, zone dynamique)
-   ALERT_DANGER            // Danger (cassure, perte alignement)
+   EMA_ALERT_INFO = 0,     // Information (touche EMA, compression)
+   EMA_ALERT_SETUP,        // Setup valide (alignement, zone dynamique)
+   EMA_ALERT_DANGER        // Danger (cassure, perte alignement)
 };
 
 //+------------------------------------------------------------------+
@@ -1306,7 +1306,7 @@ STrendAnalysis CMovingAverages::Analyze(int shift)
 SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
 {
    SEMAAlert alert;
-   alert.level = ALERT_INFO;
+   alert.level = EMA_ALERT_INFO;
    alert.event = EMA_EVENT_NONE;
    alert.message = "";
    alert.time = TimeCurrent();
@@ -1314,7 +1314,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
    // DANGER: Croisements majeurs
    if(IsGoldenCross(shift))
    {
-      alert.level = ALERT_DANGER;
+      alert.level = EMA_ALERT_DANGER;
       alert.event = EMA_GOLDEN_CROSS;
       alert.message = "GOLDEN CROSS! EMA 50 croise EMA 200 vers le haut - Changement de régime";
       return alert;
@@ -1322,7 +1322,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
 
    if(IsDeathCross(shift))
    {
-      alert.level = ALERT_DANGER;
+      alert.level = EMA_ALERT_DANGER;
       alert.event = EMA_DEATH_CROSS;
       alert.message = "DEATH CROSS! EMA 50 croise EMA 200 vers le bas - Changement de régime";
       return alert;
@@ -1336,7 +1336,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
 
    if(pricePrev > ema200Prev && price < ema200)
    {
-      alert.level = ALERT_DANGER;
+      alert.level = EMA_ALERT_DANGER;
       alert.event = EMA_BREAK_200;
       alert.message = "DANGER! Prix casse sous EMA 200 - Sortir des longs";
       return alert;
@@ -1344,7 +1344,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
 
    if(pricePrev < ema200Prev && price > ema200)
    {
-      alert.level = ALERT_DANGER;
+      alert.level = EMA_ALERT_DANGER;
       alert.event = EMA_BREAK_200;
       alert.message = "ATTENTION! Prix casse au-dessus EMA 200 - Sortir des shorts";
       return alert;
@@ -1354,7 +1354,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
    SRibbonState ribbon = GetRibbonState(shift);
    if(ribbon.isAligned)
    {
-      alert.level = ALERT_SETUP;
+      alert.level = EMA_ALERT_SETUP;
       alert.event = ribbon.isBullish ? EMA_RIBBON_BULLISH : EMA_RIBBON_BEARISH;
       alert.message = ribbon.isBullish
                      ? "SETUP: EMA Ribbon aligné HAUSSIER - Chercher des achats sur repli"
@@ -1365,7 +1365,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
    // INFO: Compression
    if(ribbon.isCompressed)
    {
-      alert.level = ALERT_INFO;
+      alert.level = EMA_ALERT_INFO;
       alert.event = EMA_RIBBON_COMPRESSION;
       alert.message = "INFO: EMAs compressées - Perte de momentum, attendre breakout";
       return alert;
@@ -1375,7 +1375,7 @@ SEMAAlert CMovingAverages::GetCurrentAlert(int shift)
    SEMARejection rejection;
    if(DetectEMARejection(shift, rejection))
    {
-      alert.level = ALERT_INFO;
+      alert.level = EMA_ALERT_INFO;
       if(rejection.emaPeriod == 21) alert.event = EMA_REJECTION_21;
       else if(rejection.emaPeriod == 50) alert.event = EMA_REJECTION_50;
       else alert.event = EMA_REJECTION_200;
@@ -1494,9 +1494,9 @@ string CMovingAverages::GetAlertMessage(int shift)
    string prefix = "";
    switch(alert.level)
    {
-      case ALERT_INFO:   prefix = "ℹ️ "; break;
-      case ALERT_SETUP:  prefix = "📈 "; break;
-      case ALERT_DANGER: prefix = "🔴 "; break;
+      case EMA_ALERT_INFO:   prefix = ""; break;
+      case EMA_ALERT_SETUP:  prefix = ""; break;
+      case EMA_ALERT_DANGER: prefix = ""; break;
    }
 
    return prefix + alert.message;

@@ -28,7 +28,7 @@ enum ENUM_MTF_ALIGNMENT
 struct STimeframeAnalysis
 {
    ENUM_TIMEFRAMES         timeframe;
-   ENUM_MARKET_STRUCTURE   structure;
+   ENUM_STRUCTURE_STATE   structure;
    bool                    isBullishBias;    // Prix > EMA 200
    bool                    isRibbonAligned;
    bool                    isRibbonBullish;
@@ -95,12 +95,12 @@ public:
    // RÈGLE: Daily = Direction principale
    bool              IsDailyBullish();
    bool              IsDailyBearish();
-   ENUM_MARKET_STRUCTURE GetDailyStructure();
+   ENUM_STRUCTURE_STATE GetDailyStructure();
 
    // RÈGLE: H4 = Zone & structure
    bool              IsH4Bullish();
    bool              IsH4Bearish();
-   ENUM_MARKET_STRUCTURE GetH4Structure();
+   ENUM_STRUCTURE_STATE GetH4Structure();
 
    // RÈGLE: H1/M15 = Déclenchement (scalping)
    bool              IsEntryTimeframeBullish();
@@ -327,7 +327,7 @@ bool CMultiTimeframe::IsDailyBearish()
    return (daily.structure == STRUCTURE_BEARISH && !daily.isBullishBias);
 }
 
-ENUM_MARKET_STRUCTURE CMultiTimeframe::GetDailyStructure()
+ENUM_STRUCTURE_STATE CMultiTimeframe::GetDailyStructure()
 {
    m_structureDaily.Analyze();
    return m_structureDaily.GetStructure();
@@ -348,7 +348,7 @@ bool CMultiTimeframe::IsH4Bearish()
    return (h4.structure == STRUCTURE_BEARISH || !h4.isBullishBias);
 }
 
-ENUM_MARKET_STRUCTURE CMultiTimeframe::GetH4Structure()
+ENUM_STRUCTURE_STATE CMultiTimeframe::GetH4Structure()
 {
    m_structureH4.Analyze();
    return m_structureH4.GetStructure();

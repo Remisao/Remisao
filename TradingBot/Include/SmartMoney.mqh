@@ -33,7 +33,7 @@ enum ENUM_OB_TYPE
 };
 
 // Statut d'une zone
-enum ENUM_ZONE_STATUS
+enum ENUM_SMC_ZONE_STATUS
 {
    ZONE_ACTIVE,             // Zone active, non testée
    ZONE_TESTED,             // Zone testée mais pas invalidée
@@ -43,13 +43,13 @@ enum ENUM_ZONE_STATUS
 };
 
 // Qualité d'une zone
-enum ENUM_ZONE_QUALITY
+enum ENUM_SMC_ZONE_QUALITY
 {
-   QUALITY_PREMIUM,         // Qualité premium (confluence forte)
-   QUALITY_HIGH,            // Haute qualité
-   QUALITY_MEDIUM,          // Qualité moyenne
-   QUALITY_LOW,             // Faible qualité
-   QUALITY_INVALID          // Invalide
+   SMC_QUALITY_PREMIUM,         // Qualité premium (confluence forte)
+   SMC_QUALITY_HIGH,            // Haute qualité
+   SMC_QUALITY_MEDIUM,          // Qualité moyenne
+   SMC_QUALITY_LOW,             // Faible qualité
+   SMC_QUALITY_INVALID          // Invalide
 };
 
 // Type d'événement de zone
@@ -90,8 +90,8 @@ struct SOrderBlock
    // Identification
    int                  id;              // ID unique
    ENUM_OB_TYPE         type;            // Haussier ou Baissier
-   ENUM_ZONE_STATUS     status;          // Statut actuel
-   ENUM_ZONE_QUALITY    quality;         // Qualité de la zone
+   ENUM_SMC_ZONE_STATUS     status;          // Statut actuel
+   ENUM_SMC_ZONE_QUALITY    quality;         // Qualité de la zone
    ENUM_TIMEFRAMES      timeframe;       // UT d'origine
 
    // Zone
@@ -126,7 +126,7 @@ struct SOrderBlock
       id = 0;
       type = OB_NONE;
       status = ZONE_ACTIVE;
-      quality = QUALITY_INVALID;
+      quality = SMC_QUALITY_INVALID;
       timeframe = PERIOD_CURRENT;
       high = 0;
       low = 0;
@@ -156,8 +156,8 @@ struct SFairValueGap
    // Identification
    int                  id;              // ID unique
    bool                 isBullish;       // Direction
-   ENUM_ZONE_STATUS     status;          // Statut actuel
-   ENUM_ZONE_QUALITY    quality;         // Qualité
+   ENUM_SMC_ZONE_STATUS     status;          // Statut actuel
+   ENUM_SMC_ZONE_QUALITY    quality;         // Qualité
    ENUM_TIMEFRAMES      timeframe;       // UT d'origine
 
    // Zone
@@ -195,7 +195,7 @@ struct SFairValueGap
       id = 0;
       isBullish = false;
       status = ZONE_ACTIVE;
-      quality = QUALITY_INVALID;
+      quality = SMC_QUALITY_INVALID;
       timeframe = PERIOD_CURRENT;
       high = 0;
       low = 0;
@@ -376,7 +376,7 @@ private:
    int                  FindLastBullishCandle(int startBar, int maxLookback);
    bool                 ValidateOBImpulse(int obBar, int bosBar, bool isBullish);
    int                  CalculateOBScore(SOrderBlock &ob);
-   ENUM_ZONE_QUALITY    ScoreToQuality(int score);
+   ENUM_SMC_ZONE_QUALITY    ScoreToQuality(int score);
 
    //--- Méthodes privées - FVG
    bool                 DetectBullishFVG(int shift, SFairValueGap &fvg);
@@ -481,8 +481,8 @@ public:
    string               OrderBlockToString(SOrderBlock &ob);
    string               FVGToString(SFairValueGap &fvg);
    string               LiquidityToString(SLiquidity &liq);
-   string               ZoneStatusToString(ENUM_ZONE_STATUS status);
-   string               ZoneQualityToString(ENUM_ZONE_QUALITY quality);
+   string               ZoneStatusToString(ENUM_SMC_ZONE_STATUS status);
+   string               ZoneQualityToString(ENUM_SMC_ZONE_QUALITY quality);
    string               GetSMCSummary();
 
    //--- ============ COMPATIBILITÉ ANCIENNE API ============
@@ -863,7 +863,7 @@ bool CSmartMoney::DetectBullishOB(int bosBarIndex, SOrderBlock &ob)
    // Calculer le score et la qualité
    ob.score = CalculateOBScore(ob);
    ob.quality = ScoreToQuality(ob.score);
-   ob.isValid = (ob.quality != QUALITY_INVALID);
+   ob.isValid = (ob.quality != SMC_QUALITY_INVALID);
 
    return ob.isValid;
 }
@@ -921,7 +921,7 @@ bool CSmartMoney::DetectBearishOB(int bosBarIndex, SOrderBlock &ob)
 
    ob.score = CalculateOBScore(ob);
    ob.quality = ScoreToQuality(ob.score);
-   ob.isValid = (ob.quality != QUALITY_INVALID);
+   ob.isValid = (ob.quality != SMC_QUALITY_INVALID);
 
    return ob.isValid;
 }
@@ -989,13 +989,13 @@ int CSmartMoney::CalculateOBScore(SOrderBlock &ob)
 //+------------------------------------------------------------------+
 //| Convertir un score en qualité                                     |
 //+------------------------------------------------------------------+
-ENUM_ZONE_QUALITY CSmartMoney::ScoreToQuality(int score)
+ENUM_SMC_ZONE_QUALITY CSmartMoney::ScoreToQuality(int score)
 {
-   if(score >= 85) return QUALITY_PREMIUM;
-   if(score >= 70) return QUALITY_HIGH;
-   if(score >= 50) return QUALITY_MEDIUM;
-   if(score >= 30) return QUALITY_LOW;
-   return QUALITY_INVALID;
+   if(score >= 85) return SMC_QUALITY_PREMIUM;
+   if(score >= 70) return SMC_QUALITY_HIGH;
+   if(score >= 50) return SMC_QUALITY_MEDIUM;
+   if(score >= 30) return SMC_QUALITY_LOW;
+   return SMC_QUALITY_INVALID;
 }
 
 //+------------------------------------------------------------------+
@@ -1137,7 +1137,7 @@ bool CSmartMoney::DetectBullishFVG(int shift, SFairValueGap &fvg)
 
    fvg.score = CalculateFVGScore(fvg);
    fvg.quality = ScoreToQuality(fvg.score);
-   fvg.isValid = (fvg.quality != QUALITY_INVALID);
+   fvg.isValid = (fvg.quality != SMC_QUALITY_INVALID);
 
    return fvg.isValid;
 }
@@ -1200,7 +1200,7 @@ bool CSmartMoney::DetectBearishFVG(int shift, SFairValueGap &fvg)
 
    fvg.score = CalculateFVGScore(fvg);
    fvg.quality = ScoreToQuality(fvg.score);
-   fvg.isValid = (fvg.quality != QUALITY_INVALID);
+   fvg.isValid = (fvg.quality != SMC_QUALITY_INVALID);
 
    return fvg.isValid;
 }
@@ -2069,9 +2069,9 @@ int CSmartMoney::GetBullishScore(double price)
       else if(distancePct <= 1.0) score += 30;
       else if(distancePct <= 2.0) score += 20;
 
-      if(ob.quality == QUALITY_PREMIUM) score += 20;
-      else if(ob.quality == QUALITY_HIGH) score += 15;
-      else if(ob.quality == QUALITY_MEDIUM) score += 10;
+      if(ob.quality == SMC_QUALITY_PREMIUM) score += 20;
+      else if(ob.quality == SMC_QUALITY_HIGH) score += 15;
+      else if(ob.quality == SMC_QUALITY_MEDIUM) score += 10;
    }
 
    // FVG haussier proche
@@ -2113,9 +2113,9 @@ int CSmartMoney::GetBearishScore(double price)
       else if(distancePct <= 1.0) score += 30;
       else if(distancePct <= 2.0) score += 20;
 
-      if(ob.quality == QUALITY_PREMIUM) score += 20;
-      else if(ob.quality == QUALITY_HIGH) score += 15;
-      else if(ob.quality == QUALITY_MEDIUM) score += 10;
+      if(ob.quality == SMC_QUALITY_PREMIUM) score += 20;
+      else if(ob.quality == SMC_QUALITY_HIGH) score += 15;
+      else if(ob.quality == SMC_QUALITY_MEDIUM) score += 10;
    }
 
    SFairValueGap fvg = GetNearestBearishFVG(price);
@@ -2420,7 +2420,7 @@ string CSmartMoney::LiquidityToString(SLiquidity &liq)
                        type, status, liq.level, liq.touchCount);
 }
 
-string CSmartMoney::ZoneStatusToString(ENUM_ZONE_STATUS status)
+string CSmartMoney::ZoneStatusToString(ENUM_SMC_ZONE_STATUS status)
 {
    switch(status)
    {
@@ -2433,15 +2433,15 @@ string CSmartMoney::ZoneStatusToString(ENUM_ZONE_STATUS status)
    }
 }
 
-string CSmartMoney::ZoneQualityToString(ENUM_ZONE_QUALITY quality)
+string CSmartMoney::ZoneQualityToString(ENUM_SMC_ZONE_QUALITY quality)
 {
    switch(quality)
    {
-      case QUALITY_PREMIUM: return "PREMIUM";
-      case QUALITY_HIGH: return "HAUTE";
-      case QUALITY_MEDIUM: return "MOYENNE";
-      case QUALITY_LOW: return "FAIBLE";
-      case QUALITY_INVALID: return "INVALIDE";
+      case SMC_QUALITY_PREMIUM: return "PREMIUM";
+      case SMC_QUALITY_HIGH: return "HAUTE";
+      case SMC_QUALITY_MEDIUM: return "MOYENNE";
+      case SMC_QUALITY_LOW: return "FAIBLE";
+      case SMC_QUALITY_INVALID: return "INVALIDE";
       default: return "?";
    }
 }

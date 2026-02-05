@@ -36,12 +36,12 @@ enum ENUM_BOT_STATE
 //--- Types d'alertes
 enum ENUM_ALERT_TYPE
 {
-   ALERT_NONE = 0,
-   ALERT_PRE_SIGNAL,        // 🟡 Contexte en cours
-   ALERT_SETUP_SIGNAL,      // 🚨 Setup confirmé
-   ALERT_MJ_SETUP,          // 🔁 Mise à jour setup
-   ALERT_EXIT,              // 🟢 Sortie recommandée
-   ALERT_INFO               // ℹ️ Information
+   ALERT_TYPE_NONE = 0,
+   ALERT_TYPE_PRE_SIGNAL,   // Contexte en cours
+   ALERT_TYPE_SETUP_SIGNAL, // Setup confirmé
+   ALERT_TYPE_MJ_SETUP,     // Mise à jour setup
+   ALERT_TYPE_EXIT,         // Sortie recommandée
+   ALERT_TYPE_INFO          // Information
 };
 
 //--- Priorités
@@ -155,7 +155,7 @@ struct SMarketState
       activeSetup.Reset();
       lastAlertTime = 0;
       lastStateChange = 0;
-      lastAlertType = ALERT_NONE;
+      lastAlertType = ALERT_TYPE_NONE;
       preSignalCount = 0;
       for(int i = 0; i < 5; i++) preSignalReasons[i] = false;
    }
@@ -182,7 +182,7 @@ struct SAlertData
 
    void Reset()
    {
-      type = ALERT_NONE;
+      type = ALERT_TYPE_NONE;
       priority = PRIORITY_INFO;
       symbol = "";
       timeframe = PERIOD_CURRENT;
@@ -577,13 +577,13 @@ bool CAlertSystem::CanSendAlert(int marketIndex, ENUM_ALERT_TYPE type)
 
    switch(type)
    {
-      case ALERT_PRE_SIGNAL:
+      case ALERT_TYPE_PRE_SIGNAL:
          cooldown = m_preSignalCooldownSec;
          break;
-      case ALERT_SETUP_SIGNAL:
+      case ALERT_TYPE_SETUP_SIGNAL:
          cooldown = m_setupAlertCooldownSec;
          break;
-      case ALERT_EXIT:
+      case ALERT_TYPE_EXIT:
          cooldown = 0; // EXIT toujours prioritaire
          break;
       default:
@@ -669,7 +669,7 @@ bool CAlertSystem::TransitionToPreSignal(string symbol, ENUM_TIMEFRAMES tf,
    }
 
    // Anti-spam
-   if(!CanSendAlert(index, ALERT_PRE_SIGNAL))
+   if(!CanSendAlert(index, ALERT_TYPE_PRE_SIGNAL))
    {
       return false;
    }
@@ -687,7 +687,7 @@ bool CAlertSystem::TransitionToPreSignal(string symbol, ENUM_TIMEFRAMES tf,
    // Créer et envoyer l'alerte
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_PRE_SIGNAL;
+   alert.type = ALERT_TYPE_PRE_SIGNAL;
    alert.priority = PRIORITY_MEDIUM;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -697,7 +697,7 @@ bool CAlertSystem::TransitionToPreSignal(string symbol, ENUM_TIMEFRAMES tf,
    alert.time = TimeCurrent();
 
    DoSendAlert(alert);
-   UpdateLastAlertTime(index, ALERT_PRE_SIGNAL);
+   UpdateLastAlertTime(index, ALERT_TYPE_PRE_SIGNAL);
 
    Print("✓ PRE_SIGNAL émis pour ", symbol, " - Direction: ", DirectionToString(dir));
    return true;
@@ -745,7 +745,7 @@ bool CAlertSystem::TransitionToSetupActive(string symbol, ENUM_TIMEFRAMES tf,
    }
 
    // Anti-spam
-   if(!CanSendAlert(index, ALERT_SETUP_SIGNAL))
+   if(!CanSendAlert(index, ALERT_TYPE_SETUP_SIGNAL))
    {
       return false;
    }
@@ -784,7 +784,7 @@ bool CAlertSystem::TransitionToSetupActive(string symbol, ENUM_TIMEFRAMES tf,
    // Créer et envoyer l'alerte
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_SETUP_SIGNAL;
+   alert.type = ALERT_TYPE_SETUP_SIGNAL;
    alert.priority = PRIORITY_HIGH;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -799,7 +799,7 @@ bool CAlertSystem::TransitionToSetupActive(string symbol, ENUM_TIMEFRAMES tf,
    alert.time = TimeCurrent();
 
    DoSendAlert(alert);
-   UpdateLastAlertTime(index, ALERT_SETUP_SIGNAL);
+   UpdateLastAlertTime(index, ALERT_TYPE_SETUP_SIGNAL);
 
    Print("✓ SETUP_SIGNAL émis pour ", symbol, " - ID: ", setup.id, " - Direction: ", DirectionToString(dir));
    return true;
@@ -875,7 +875,7 @@ bool CAlertSystem::UpdateActiveSetup(string symbol,
    }
 
    // Anti-spam (plus court pour MJ)
-   if(!CanSendAlert(index, ALERT_MJ_SETUP))
+   if(!CanSendAlert(index, ALERT_TYPE_MJ_SETUP))
    {
       // Mettre à jour quand même mais sans alerte
       setup.lastUpdate = TimeCurrent();
@@ -890,7 +890,7 @@ bool CAlertSystem::UpdateActiveSetup(string symbol,
    // Créer et envoyer l'alerte
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_MJ_SETUP;
+   alert.type = ALERT_TYPE_MJ_SETUP;
    alert.priority = PRIORITY_MEDIUM;
    alert.symbol = symbol;
    alert.timeframe = setup.timeframe;
@@ -904,7 +904,7 @@ bool CAlertSystem::UpdateActiveSetup(string symbol,
    alert.time = TimeCurrent();
 
    DoSendAlert(alert);
-   UpdateLastAlertTime(index, ALERT_MJ_SETUP);
+   UpdateLastAlertTime(index, ALERT_TYPE_MJ_SETUP);
 
    Print("✓ MJ_SETUP émis pour ", symbol, " - Update #", setup.updateCount);
    return true;
@@ -946,7 +946,7 @@ bool CAlertSystem::TransitionToExit(string symbol, SExitConditions &conditions)
    // Créer et envoyer l'alerte
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_EXIT;
+   alert.type = ALERT_TYPE_EXIT;
    alert.priority = PRIORITY_CRITICAL;
    alert.symbol = symbol;
    alert.timeframe = setup.timeframe;
@@ -957,7 +957,7 @@ bool CAlertSystem::TransitionToExit(string symbol, SExitConditions &conditions)
    alert.time = TimeCurrent();
 
    DoSendAlert(alert);
-   UpdateLastAlertTime(index, ALERT_EXIT);
+   UpdateLastAlertTime(index, ALERT_TYPE_EXIT);
 
    // Invalider le setup
    setup.isValid = false;
@@ -1436,7 +1436,7 @@ void CAlertSystem::SendStartupAlert(string symbol, ENUM_TIMEFRAMES tf)
    // Créer l'alerte
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_INFO;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -1502,7 +1502,7 @@ void CAlertSystem::SendPatternAlert(string symbol, ENUM_TIMEFRAMES tf,
    // Envoyer comme info (pas de changement d'état)
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_LOW;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -1518,7 +1518,7 @@ void CAlertSystem::SendSMCAlert(string symbol, ENUM_TIMEFRAMES tf,
 {
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_MEDIUM;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -1534,7 +1534,7 @@ void CAlertSystem::SendDivergenceAlert(string symbol, ENUM_TIMEFRAMES tf,
 {
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_MEDIUM;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -1549,7 +1549,7 @@ void CAlertSystem::SendMTFAlert(string symbol, string alignment, string details)
 {
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_HIGH;
    alert.symbol = symbol;
    alert.title = "🎯 MTF ALIGNÉ";
@@ -1564,7 +1564,7 @@ void CAlertSystem::SendVolumeAlert(string symbol, ENUM_TIMEFRAMES tf,
 {
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_LOW;
    alert.symbol = symbol;
    alert.timeframe = tf;
@@ -1579,7 +1579,7 @@ void CAlertSystem::SendRiskAlert(string symbol, string message)
 {
    SAlertData alert;
    alert.Reset();
-   alert.type = ALERT_INFO;
+   alert.type = ALERT_TYPE_INFO;
    alert.priority = PRIORITY_CRITICAL;
    alert.symbol = symbol;
    alert.title = "⚠️ RISQUE";

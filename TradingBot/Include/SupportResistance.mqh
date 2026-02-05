@@ -19,7 +19,28 @@
 //+------------------------------------------------------------------+
 
 //+------------------------------------------------------------------+
-//| ÉNUMÉRATIONS                                                      |
+//| ÉNUMÉRATIONS - ANCIENNE API (Compatibilité)                       |
+//+------------------------------------------------------------------+
+
+// Type de niveau (ancienne API)
+enum ENUM_LEVEL_TYPE
+{
+   LEVEL_SUPPORT,             // Support
+   LEVEL_RESISTANCE,          // Résistance
+   LEVEL_BROKEN_SUPPORT,      // Support cassé
+   LEVEL_BROKEN_RESISTANCE    // Résistance cassée
+};
+
+// Force du niveau (ancienne API)
+enum ENUM_LEVEL_STRENGTH
+{
+   STRENGTH_WEAK,             // Faible
+   STRENGTH_MODERATE,         // Modéré
+   STRENGTH_STRONG            // Fort
+};
+
+//+------------------------------------------------------------------+
+//| ÉNUMÉRATIONS - NOUVELLE API (Professionnelle)                     |
 //+------------------------------------------------------------------+
 
 // Type de zone S/R
@@ -78,7 +99,38 @@ enum ENUM_SR_TIMEFRAME_RANK
 };
 
 //+------------------------------------------------------------------+
-//| STRUCTURES DE DONNÉES                                             |
+//| STRUCTURES DE DONNÉES - ANCIENNE API (Compatibilité)              |
+//+------------------------------------------------------------------+
+
+// Structure de niveau (ancienne API - pour compatibilité)
+struct SLevel
+{
+   double               price;          // Prix du niveau
+   ENUM_LEVEL_TYPE      type;           // Type de niveau
+   ENUM_LEVEL_STRENGTH  strength;       // Force du niveau
+   int                  touchCount;     // Nombre de touches
+   datetime             firstTouch;     // Première touche
+   datetime             lastTouch;      // Dernière touche
+   bool                 isBroken;       // Niveau cassé
+   bool                 isFakeout;      // Fausse cassure
+   double               brokenPrice;    // Prix de cassure
+
+   void Reset()
+   {
+      price = 0;
+      type = LEVEL_SUPPORT;
+      strength = STRENGTH_WEAK;
+      touchCount = 0;
+      firstTouch = 0;
+      lastTouch = 0;
+      isBroken = false;
+      isFakeout = false;
+      brokenPrice = 0;
+   }
+};
+
+//+------------------------------------------------------------------+
+//| STRUCTURES DE DONNÉES - NOUVELLE API (Professionnelle)            |
 //+------------------------------------------------------------------+
 
 // Structure d'une touche sur une zone
