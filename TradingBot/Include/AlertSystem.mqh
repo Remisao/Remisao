@@ -892,20 +892,20 @@ bool CAlertSystem::UpdateActiveSetup(string symbol,
    alert.type = ALERT_TYPE_MJ_SETUP;
    alert.priority = PRIORITY_MEDIUM;
    alert.symbol = symbol;
-   alert.timeframe = setup.timeframe;
-   alert.direction = setup.direction;
-   alert.title = "🔁 MJ_SETUP";
-   alert.body = FormatMJSetupAlert(setup, changes);
-   alert.entryPrice = setup.entryPrice;
-   alert.stopLoss = setup.stopLoss;
-   alert.tp1 = setup.tp1;
-   alert.tp2 = setup.tp2;
+   alert.timeframe = m_marketStates[index].activeSetup.timeframe;
+   alert.direction = m_marketStates[index].activeSetup.direction;
+   alert.title = "MJ_SETUP";
+   alert.body = FormatMJSetupAlert(m_marketStates[index].activeSetup, changes);
+   alert.entryPrice = m_marketStates[index].activeSetup.entryPrice;
+   alert.stopLoss = m_marketStates[index].activeSetup.stopLoss;
+   alert.tp1 = m_marketStates[index].activeSetup.tp1;
+   alert.tp2 = m_marketStates[index].activeSetup.tp2;
    alert.time = TimeCurrent();
 
    DoSendAlert(alert);
    UpdateLastAlertTime(index, ALERT_TYPE_MJ_SETUP);
 
-   Print("✓ MJ_SETUP émis pour ", symbol, " - Update #", setup.updateCount);
+   Print("MJ_SETUP emis pour ", symbol, " - Update #", m_marketStates[index].activeSetup.updateCount);
    return true;
 }
 

@@ -780,7 +780,7 @@ void CalculateTradeLevels(int index, bool lookingForBuy,
       tp2 = entry + slDistance * 2.5;  // 2.5R
 
       // Si Fibo disponible, utiliser extensions
-      if(fibLevels.isValid)
+      if(fibLevels.ext1272 > 0)
       {
          tp1 = g_fib[index].GetTP1();
          tp2 = g_fib[index].GetTP2();
@@ -791,7 +791,7 @@ void CalculateTradeLevels(int index, bool lookingForBuy,
       tp1 = entry - slDistance * 1.5;
       tp2 = entry - slDistance * 2.5;
 
-      if(fibLevels.isValid)
+      if(fibLevels.ext1272 > 0)
       {
          tp1 = g_fib[index].GetTP1();
          tp2 = g_fib[index].GetTP2();
@@ -849,9 +849,9 @@ bool CheckExitConditions(int index)
    if(g_divergences[index].GetActiveDivergenceCount() > 0 &&
       g_divergences[index].GetActiveDivergence(0, div) && div.isConfirmed)
    {
-      if(lookingForBuy && (div.type == DIV_REGULAR_BEARISH || div.type == DIV_HIDDEN_BEARISH))
+      if(lookingForBuy && (div.type == DIV_BEARISH_REGULAR || div.type == DIV_BEARISH_HIDDEN))
          exitCond.hasDivergenceConfirmed = true;
-      if(!lookingForBuy && (div.type == DIV_REGULAR_BULLISH || div.type == DIV_HIDDEN_BULLISH))
+      if(!lookingForBuy && (div.type == DIV_BULLISH_REGULAR || div.type == DIV_BULLISH_HIDDEN))
          exitCond.hasDivergenceConfirmed = true;
    }
 
