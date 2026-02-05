@@ -34,9 +34,9 @@ enum ENUM_LEVEL_TYPE
 // Force du niveau (ancienne API)
 enum ENUM_LEVEL_STRENGTH
 {
-   STRENGTH_WEAK,             // Faible
-   STRENGTH_MODERATE,         // Modéré
-   STRENGTH_STRONG            // Fort
+   LEVEL_STRENGTH_WEAK,       // Faible
+   LEVEL_STRENGTH_MODERATE,   // Modéré
+   LEVEL_STRENGTH_STRONG      // Fort
 };
 
 //+------------------------------------------------------------------+
@@ -119,7 +119,7 @@ struct SLevel
    {
       price = 0;
       type = LEVEL_SUPPORT;
-      strength = STRENGTH_WEAK;
+      strength = LEVEL_STRENGTH_WEAK;
       touchCount = 0;
       firstTouch = 0;
       lastTouch = 0;
@@ -1639,7 +1639,7 @@ SLevel CSupportResistance::GetLevel(int index)
    SLevel level;
    level.price = 0;
    level.type = LEVEL_SUPPORT;
-   level.strength = STRENGTH_WEAK;
+   level.strength = LEVEL_STRENGTH_WEAK;
    level.touchCount = 0;
    level.firstTouch = 0;
    level.lastTouch = 0;
@@ -1665,9 +1665,9 @@ SLevel CSupportResistance::GetLevel(int index)
    switch(zone.strength)
    {
       case SR_STRENGTH_WEAK:
-      case SR_STRENGTH_MODERATE: level.strength = STRENGTH_WEAK; break;
-      case SR_STRENGTH_STRONG:   level.strength = STRENGTH_MODERATE; break;
-      case SR_STRENGTH_MAJOR:    level.strength = STRENGTH_STRONG; break;
+      case SR_STRENGTH_MODERATE: level.strength = LEVEL_STRENGTH_WEAK; break;
+      case SR_STRENGTH_STRONG:   level.strength = LEVEL_STRENGTH_MODERATE; break;
+      case SR_STRENGTH_MAJOR:    level.strength = LEVEL_STRENGTH_STRONG; break;
    }
 
    level.touchCount = zone.touchCount;
@@ -1731,10 +1731,10 @@ string CSupportResistance::StrengthToString(ENUM_LEVEL_STRENGTH strength)
 {
    switch(strength)
    {
-      case STRENGTH_WEAK:     return "Faible";
-      case STRENGTH_MODERATE: return "Modéré";
-      case STRENGTH_STRONG:   return "Fort";
-      default:                return "Inconnu";
+      case LEVEL_STRENGTH_WEAK:     return "Faible";
+      case LEVEL_STRENGTH_MODERATE: return "Modéré";
+      case LEVEL_STRENGTH_STRONG:   return "Fort";
+      default:                      return "Inconnu";
    }
 }
 

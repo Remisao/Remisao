@@ -168,11 +168,11 @@ STimeframeAnalysis CMultiTimeframe::AnalyzeTimeframe(ENUM_TIMEFRAMES tf,
    analysis.structure = structure.GetStructure();
 
    // Analyser les EMAs
-   SEMAAnalysis emaAnalysis = ema.Analyze(0);
-   analysis.isBullishBias = emaAnalysis.isBullishBias;
-   analysis.isRibbonAligned = emaAnalysis.isRibbonAligned;
-   analysis.isRibbonBullish = emaAnalysis.isRibbonBullish;
-   analysis.ema200 = emaAnalysis.current.ema200;
+   STrendAnalysis emaAnalysis = ema.Analyze(0);
+   analysis.isBullishBias = emaAnalysis.allowLong;
+   analysis.isRibbonAligned = emaAnalysis.ribbon.isAligned;
+   analysis.isRibbonBullish = emaAnalysis.ribbon.isBullish;
+   analysis.ema200 = emaAnalysis.values.ema200;
 
    // Résumé
    string tfName;

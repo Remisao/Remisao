@@ -830,35 +830,34 @@ bool CAlertSystem::UpdateActiveSetup(string symbol,
    }
 
    // Vérifier qu'au moins 1 élément a changé
-   SActiveSetup &setup = m_marketStates[index].activeSetup;
    string changes = "";
    bool hasChange = false;
 
-   if(newEntry > 0 && newEntry != setup.entryPrice)
+   if(newEntry > 0 && newEntry != m_marketStates[index].activeSetup.entryPrice)
    {
-      changes += "Entry: " + DoubleToStr(setup.entryPrice, 5) + " → " + DoubleToStr(newEntry, 5) + "\n";
-      setup.entryPrice = newEntry;
+      changes += "Entry: " + DoubleToStr(m_marketStates[index].activeSetup.entryPrice, 5) + " → " + DoubleToStr(newEntry, 5) + "\n";
+      m_marketStates[index].activeSetup.entryPrice = newEntry;
       hasChange = true;
    }
 
-   if(newSL > 0 && newSL != setup.stopLoss)
+   if(newSL > 0 && newSL != m_marketStates[index].activeSetup.stopLoss)
    {
-      changes += "SL: " + DoubleToStr(setup.stopLoss, 5) + " → " + DoubleToStr(newSL, 5) + "\n";
-      setup.stopLoss = newSL;
+      changes += "SL: " + DoubleToStr(m_marketStates[index].activeSetup.stopLoss, 5) + " → " + DoubleToStr(newSL, 5) + "\n";
+      m_marketStates[index].activeSetup.stopLoss = newSL;
       hasChange = true;
    }
 
-   if(newTP1 > 0 && newTP1 != setup.tp1)
+   if(newTP1 > 0 && newTP1 != m_marketStates[index].activeSetup.tp1)
    {
-      changes += "TP1: " + DoubleToStr(setup.tp1, 5) + " → " + DoubleToStr(newTP1, 5) + "\n";
-      setup.tp1 = newTP1;
+      changes += "TP1: " + DoubleToStr(m_marketStates[index].activeSetup.tp1, 5) + " → " + DoubleToStr(newTP1, 5) + "\n";
+      m_marketStates[index].activeSetup.tp1 = newTP1;
       hasChange = true;
    }
 
-   if(newTP2 > 0 && newTP2 != setup.tp2)
+   if(newTP2 > 0 && newTP2 != m_marketStates[index].activeSetup.tp2)
    {
-      changes += "TP2: " + DoubleToStr(setup.tp2, 5) + " → " + DoubleToStr(newTP2, 5) + "\n";
-      setup.tp2 = newTP2;
+      changes += "TP2: " + DoubleToStr(m_marketStates[index].activeSetup.tp2, 5) + " → " + DoubleToStr(newTP2, 5) + "\n";
+      m_marketStates[index].activeSetup.tp2 = newTP2;
       hasChange = true;
    }
 
@@ -878,14 +877,14 @@ bool CAlertSystem::UpdateActiveSetup(string symbol,
    if(!CanSendAlert(index, ALERT_TYPE_MJ_SETUP))
    {
       // Mettre à jour quand même mais sans alerte
-      setup.lastUpdate = TimeCurrent();
-      setup.updateCount++;
+      m_marketStates[index].activeSetup.lastUpdate = TimeCurrent();
+      m_marketStates[index].activeSetup.updateCount++;
       return true;
    }
 
    // Mettre à jour
-   setup.lastUpdate = TimeCurrent();
-   setup.updateCount++;
+   m_marketStates[index].activeSetup.lastUpdate = TimeCurrent();
+   m_marketStates[index].activeSetup.updateCount++;
 
    // Créer et envoyer l'alerte
    SAlertData alert;
@@ -937,8 +936,6 @@ bool CAlertSystem::TransitionToExit(string symbol, SExitConditions &conditions)
       return false;
    }
 
-   SActiveSetup &setup = m_marketStates[index].activeSetup;
-
    // Mettre à jour l'état (priorité max, pas de cooldown)
    m_marketStates[index].state = STATE_EXIT_PRIORITY;
    m_marketStates[index].lastStateChange = TimeCurrent();
@@ -949,10 +946,10 @@ bool CAlertSystem::TransitionToExit(string symbol, SExitConditions &conditions)
    alert.type = ALERT_TYPE_EXIT;
    alert.priority = PRIORITY_CRITICAL;
    alert.symbol = symbol;
-   alert.timeframe = setup.timeframe;
-   alert.direction = setup.direction;
-   alert.title = "🟢 EXIT_ALERT";
-   alert.body = FormatExitAlert(setup, conditions.mainReason);
+   alert.timeframe = m_marketStates[index].activeSetup.timeframe;
+   alert.direction = m_marketStates[index].activeSetup.direction;
+   alert.title = "EXIT_ALERT";
+   alert.body = FormatExitAlert(m_marketStates[index].activeSetup, conditions.mainReason);
    alert.exitReason = conditions.mainReason;
    alert.time = TimeCurrent();
 
@@ -960,7 +957,7 @@ bool CAlertSystem::TransitionToExit(string symbol, SExitConditions &conditions)
    UpdateLastAlertTime(index, ALERT_TYPE_EXIT);
 
    // Invalider le setup
-   setup.isValid = false;
+   m_marketStates[index].activeSetup.isValid = false;
 
    // Retour automatique à NEUTRAL après EXIT
    m_marketStates[index].state = STATE_NEUTRAL;
@@ -1375,17 +1372,16 @@ string CAlertSystem::GetStateSummary(string symbol)
    if(index < 0)
       return symbol + ": Non suivi";
 
-   SMarketState &state = m_marketStates[index];
-   string summary = symbol + ": " + StateToString(state.state);
+   string summary = symbol + ": " + StateToString(m_marketStates[index].state);
 
-   if(state.state == STATE_SETUP_ACTIVE && state.activeSetup.isValid)
+   if(m_marketStates[index].state == STATE_SETUP_ACTIVE && m_marketStates[index].activeSetup.isValid)
    {
-      summary += " | " + DirectionToString(state.activeSetup.direction);
-      summary += " | Entry: " + DoubleToStr(state.activeSetup.entryPrice, 5);
+      summary += " | " + DirectionToString(m_marketStates[index].activeSetup.direction);
+      summary += " | Entry: " + DoubleToStr(m_marketStates[index].activeSetup.entryPrice, 5);
    }
-   else if(state.state == STATE_PRE_SIGNAL)
+   else if(m_marketStates[index].state == STATE_PRE_SIGNAL)
    {
-      summary += " | Conditions: " + IntegerToString(state.preSignalCount) + "/5";
+      summary += " | Conditions: " + IntegerToString(m_marketStates[index].preSignalCount) + "/5";
    }
 
    return summary;

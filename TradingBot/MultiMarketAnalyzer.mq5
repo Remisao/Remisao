@@ -253,7 +253,7 @@ bool InitializeAnalyzers()
 
       // Structure (H4 pour contexte)
       g_structure[i].Init(symbol, PERIOD_H4);
-      g_structure[i].SetParameters(InpLookback, 3);
+      g_structure[i].SetParameters(3, InpLookback, 0.5, 0.3);
 
       // Volume (H1)
       g_volume[i].Init(symbol, PERIOD_H1);
@@ -369,9 +369,7 @@ void AnalyzeSymbol(int index)
    //=================================================================
    g_structure[index].Update();
    g_smc[index].Update();
-   g_ema[index].Update();
-   g_divergences[index].Update();
-   g_volume[index].Analyze(1);
+   // EMA et Divergences sont mis à jour via leurs méthodes Analyze()
 
    //=================================================================
    // ÉTAPE 2: Vérifier les conditions de SORTIE (priorité max)
@@ -477,7 +475,8 @@ void EvaluatePreSignalConditions(int index, bool lookingForBuy, SPreSignalCondit
 
    // 4. Divergence NON confirmée (en formation)
    SDivergence div;
-   if(g_divergences[index].HasDivergence(div))
+   if(g_divergences[index].GetActiveDivergenceCount() > 0 &&
+      g_divergences[index].GetActiveDivergence(0, div))
    {
       // Divergence présente mais PAS encore confirmée
       cond.hasDivergence = !div.isConfirmed;
@@ -608,8 +607,8 @@ bool IsNearMajorZone(int index, double price, bool lookingForBuy)
 //+------------------------------------------------------------------+
 bool IsNearEMA(int index, double price)
 {
-   double ema50 = g_ema[index].GetEMA(50, 1);
-   double ema200 = g_ema[index].GetEMA(200, 1);
+   double ema50 = g_ema[index].GetEMA50(1);
+   double ema200 = g_ema[index].GetEMA200(1);
 
    double tolerance = price * 0.005; // 0.5%
 
@@ -671,15 +670,15 @@ bool HasValidCandleSignal(int index, bool lookingForBuy)
    if(lookingForBuy)
    {
       // Rejet haussier (longue mèche basse) ou impulsion haussière
-      bool isRejection = (candle.lowerWickPct >= 50.0 && candle.isBullish);
-      bool isImpulse = (candle.bodyPct >= 70.0 && candle.isBullish);
+      bool isRejection = (candle.anatomy.lowerWickRatio >= 50.0 && candle.anatomy.isBullish);
+      bool isImpulse = (candle.anatomy.bodyRatio >= 70.0 && candle.anatomy.isBullish);
       return (isRejection || isImpulse);
    }
    else
    {
       // Rejet baissier (longue mèche haute) ou impulsion baissière
-      bool isRejection = (candle.upperWickPct >= 50.0 && !candle.isBullish);
-      bool isImpulse = (candle.bodyPct >= 70.0 && !candle.isBullish);
+      bool isRejection = (candle.anatomy.upperWickRatio >= 50.0 && !candle.anatomy.isBullish);
+      bool isImpulse = (candle.anatomy.bodyRatio >= 70.0 && !candle.anatomy.isBullish);
       return (isRejection || isImpulse);
    }
 }
@@ -689,7 +688,7 @@ bool HasValidCandleSignal(int index, bool lookingForBuy)
 //+------------------------------------------------------------------+
 bool HasValidStructure(int index, bool lookingForBuy)
 {
-   SStructureAnalysis structure = g_structure[index].GetAnalysis();
+   SStructureAnalysis structure = g_structure[index].GetFullAnalysis();
 
    if(lookingForBuy)
    {
@@ -755,7 +754,7 @@ void CalculateTradeLevels(int index, bool lookingForBuy,
    }
 
    // SL basé sur structure (swing low/high)
-   SStructureAnalysis structure = g_structure[index].GetAnalysis();
+   SStructureAnalysis structure = g_structure[index].GetFullAnalysis();
 
    if(lookingForBuy)
    {
@@ -821,7 +820,7 @@ bool CheckExitConditions(int index)
    exitCond.Reset();
 
    // 1. CHoCH contre la position
-   SStructureAnalysis structure = g_structure[index].GetAnalysis();
+   SStructureAnalysis structure = g_structure[index].GetFullAnalysis();
    if(lookingForBuy)
    {
       exitCond.hasChochAgainst = (structure.lastEvent.eventType == EVENT_CHOCH_BEARISH &&
@@ -847,7 +846,8 @@ bool CheckExitConditions(int index)
 
    // 3. Divergence contraire confirmée
    SDivergence div;
-   if(g_divergences[index].HasDivergence(div) && div.isConfirmed)
+   if(g_divergences[index].GetActiveDivergenceCount() > 0 &&
+      g_divergences[index].GetActiveDivergence(0, div) && div.isConfirmed)
    {
       if(lookingForBuy && (div.type == DIV_REGULAR_BEARISH || div.type == DIV_HIDDEN_BEARISH))
          exitCond.hasDivergenceConfirmed = true;
@@ -859,11 +859,11 @@ bool CheckExitConditions(int index)
    SCandleData candle = g_candle[index].AnalyzeCandle(1);
    if(lookingForBuy)
    {
-      exitCond.hasStrongOppositeCandle = (!candle.isBullish && candle.bodyPct >= 70.0);
+      exitCond.hasStrongOppositeCandle = (!candle.anatomy.isBullish && candle.anatomy.bodyRatio >= 70.0);
    }
    else
    {
-      exitCond.hasStrongOppositeCandle = (candle.isBullish && candle.bodyPct >= 70.0);
+      exitCond.hasStrongOppositeCandle = (candle.anatomy.isBullish && candle.anatomy.bodyRatio >= 70.0);
    }
 
    // 5. Volume de retournement anormal
@@ -871,8 +871,8 @@ bool CheckExitConditions(int index)
    if(volData.volumeRatio >= 250.0) // Spike de volume
    {
       // Si volume spike avec bougie opposée
-      if((lookingForBuy && !candle.isBullish) ||
-         (!lookingForBuy && candle.isBullish))
+      if((lookingForBuy && !candle.anatomy.isBullish) ||
+         (!lookingForBuy && candle.anatomy.isBullish))
       {
          exitCond.hasVolumeReversal = true;
       }
@@ -880,8 +880,8 @@ bool CheckExitConditions(int index)
 
    // 6. Cassure EMA 50/200
    double price = SymbolInfoDouble(symbol, SYMBOL_BID);
-   double ema50 = g_ema[index].GetEMA(50, 1);
-   double ema200 = g_ema[index].GetEMA(200, 1);
+   double ema50 = g_ema[index].GetEMA50(1);
+   double ema200 = g_ema[index].GetEMA200(1);
 
    if(lookingForBuy)
    {
